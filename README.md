@@ -1,161 +1,219 @@
-# hackathon-dont-touch-the-grass-enjoyers
+# Telegram AI Bot 🤖
 
-A Telegram bot integrated with Google Gemini 2.5 Flash AI for intelligent conversations.
+Telegram бот с AI интеграцией, системой учетных записей и токенов.
 
-## Features
+## ✨ Возможности
 
-- 🤖 Telegram bot interface
-- 🧠 Powered by Google Gemini 2.5 Flash
-- ⚡ Fast and responsive
-- 📝 Simple prompt-based interaction
+- 🤖 **AI Ассистент** - Отвечает на любые вопросы используя AI
+- 👤 **Личный аккаунт** - Автоматически создается для каждого пользователя
+- 💰 **Система токенов** - 100 токенов, обновляются каждые 24 часа
+- 🗄️ **База данных** - PostgreSQL для надежного хранения данных
+- 🇷🇺 **Русский язык** - Все сообщения и ответы на русском
+- 📊 **История запросов** - Сохраняется в базе данных
 
-## Prerequisites
+## 🚀 Быстрый старт
 
-- Python 3.10 or higher (3.14 recommended)
-- Telegram Bot Token (from @BotFather)
-- Google Gemini API Key
+### Требования
 
-## Setup Instructions
+- Python 3.10+ 
+- PostgreSQL 12+
+- Telegram Bot Token
+- OpenRouter API Key
 
-### 1. Create a Virtual Environment
+### Установка
+
+1. **Клонировать репозиторий и перейти в папку**
 
 ```bash
-python3.14 -m venv venv
+cd hackathon-dont-touch-the-grass-enjoyers
 ```
 
-### 2. Activate the Virtual Environment
+2. **Создать виртуальное окружение**
 
-**On macOS/Linux:**
 ```bash
+python3 -m venv venv
 source venv/bin/activate
 ```
 
-**On Windows:**
-```bash
-venv\Scripts\activate
-```
-
-### 3. Install Dependencies
+3. **Установить зависимости**
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Configure API Keys
-
-Create a `.env` file in the project root (copy from template):
+4. **Настроить PostgreSQL**
 
 ```bash
-cp config.env .env
+# Создать базу данных
+psql -U postgres
+CREATE DATABASE telegram_bot;
+\q
+
+# Загрузить схему
+psql -U postgres -d telegram_bot -f schema.sql
 ```
 
-Then edit `.env` and add your credentials:
+5. **Настроить config.env**
+
+Отредактируйте `config.env` файл:
 
 ```env
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
-GEMINI_API_KEY=your_gemini_api_key_here
+TELEGRAM_BOT_TOKEN=ваш_токен_от_BotFather
+OPENROUTER_API_KEY=ваш_ключ_openrouter
+DB_PASSWORD=ваш_пароль_postgres
 ```
 
-**How to get API keys:**
-
-1. **Telegram Bot Token**:
-   - Open Telegram and message [@BotFather](https://t.me/botfather)
-   - Send `/newbot` and follow instructions
-   - Copy the token provided
-
-2. **Gemini API Key**:
-   - Visit [Google AI Studio](https://aistudio.google.com/app/apikey)
-   - Sign in with your Google account
-   - Click "Create API Key"
-   - Copy the key
-
-## Running the Bot
-
-Start the bot with:
+6. **Запустить бота**
 
 ```bash
 python bot.py
 ```
 
-You should see:
+## 📱 Использование
+
+### Команды бота
+
+- `/start` - Начать работу с ботом
+- `/balance` - Проверить баланс токенов  
+- `/help` - Получить справку
+
+### Как пользоваться
+
+Просто отправьте текстовое сообщение боту, и он ответит используя AI!
+
+**Примеры:**
 ```
-INFO - Bot is starting...
-```
-
-The bot is now running and waiting for messages!
-
-## Using the Bot
-
-1. Open Telegram and find your bot (search for the name you gave it)
-2. Send `/start` to initialize the bot
-3. Use `/prompt <your question>` to interact with Gemini
-
-**Examples:**
-
-```
-/prompt What is Python?
-/prompt Write a haiku about coding
-/prompt Explain quantum computing in simple terms
+Что такое Python?
+Напиши хокку о программировании
+Объясни квантовые компьютеры простыми словами
 ```
 
-## Project Structure
+## 💰 Система токенов
+
+- **100 токенов** выдается при первом запуске
+- **1 токен** = 1 запрос к AI
+- **Автоматическое обновление** каждые 24 часа
+- Проверьте баланс командой `/balance`
+
+## 🏗️ Архитектура
 
 ```
-hackathon-dont-touch-the-grass-enjoyers/
-├── bot.py                 # Main bot script
-├── requirements.txt       # Python dependencies
-├── config.env.example     # API keys template
-├── .env                   # Your API keys (not in git)
-├── README.md             # This file
-└── venv/                 # Virtual environment
+┌─────────────────┐
+│  Telegram User  │
+└────────┬────────┘
+         │
+    ┌────▼────┐
+    │  Bot    │
+    └────┬────┘
+         │
+    ┌────▼────────────────┐
+    │  User Manager       │
+    │  (Tokens & Account) │
+    └────┬────────────────┘
+         │
+    ┌────▼────────┐
+    │  AI Client  │
+    └────┬────────┘
+         │
+    ┌────▼───────────┐
+    │  OpenRouter AI │
+    └────────────────┘
 ```
 
-## Development Tools
+## 📂 Структура проекта
 
-This project uses:
-- **ruff**: Fast Python linter and formatter
-- **pyright**: Static type checker for Python
+```
+├── bot.py          # Главное приложение бота
+├── ai_client.py    # Клиент для AI API
+├── database.py     # Работа с базой данных
+├── user_manager.py # Управление пользователями и токенами
+├── config.py       # Конфигурация
+├── constants.py    # Константы и тексты на русском
+├── config.env      # Переменные окружения
+├── requirements.txt# Зависимости Python
+├── schema.sql      # Схема базы данных
+├── SETUP.md        # Подробная инструкция по установке
+└── README.md       # Этот файл
+```
 
-### Running Linter
+## 🔧 Настройка
+
+### Изменить количество токенов
+
+Отредактируйте `constants.py`:
+
+```python
+TOKEN_CONFIG = {
+    "initial_tokens": 100,      # Начальные токены
+    "max_tokens": 100,          # Максимум токенов
+    "refresh_interval_hours": 24, # Часов до обновления
+    "cost_per_request": 1       # Цена запроса
+}
+```
+
+### Изменить AI модель
+
+Отредактируйте `config.env`:
+
+```env
+AI_MODEL=deepseek/deepseek-chat
+# Или любая другая модель с https://openrouter.ai/models
+```
+
+## 🐛 Решение проблем
+
+### Ошибка подключения к базе данных
 
 ```bash
-ruff check .
+# Проверить, что PostgreSQL запущен
+sudo systemctl status postgresql
+
+# Проверить подключение
+psql -U postgres -d telegram_bot
 ```
 
-### Running Type Checker
+### Бот не отвечает
 
-```bash
-pyright
+1. Проверьте логи: `python bot.py`
+2. Проверьте токены в `config.env`
+3. Проверьте баланс OpenRouter: https://openrouter.ai/credits
+
+## 📊 Мониторинг
+
+Проверить статистику в базе данных:
+
+```sql
+-- Всего пользователей
+SELECT COUNT(*) FROM users;
+
+-- Всего запросов
+SELECT COUNT(*) FROM usage_history;
+
+-- Топ пользователей
+SELECT user_id, username, COUNT(*) as requests
+FROM users u 
+JOIN usage_history uh ON u.user_id = uh.user_id
+GROUP BY u.user_id, u.username
+ORDER BY requests DESC
+LIMIT 10;
 ```
 
-## Troubleshooting
+## 📝 Технологии
 
-### Bot doesn't respond
-- Check that `.env` file exists with correct API keys
-- Verify bot token is correct (test with @BotFather)
-- Check internet connection
+- **Python 3.10+** - Основной язык
+- **python-telegram-bot** - Telegram Bot API
+- **PostgreSQL** - База данных
+- **OpenRouter** - AI API Gateway
+- **psycopg2** - PostgreSQL драйвер
 
-### "TELEGRAM_BOT_TOKEN not found" error
-- Make sure `.env` file is in the project root
-- Verify variable names match exactly
+## 📄 Лицензия
 
-### Gemini API errors
-- Verify API key is valid at [AI Studio](https://aistudio.google.com/)
-- Check you have available quota (Gemini has free tier)
-- Ensure API key has proper permissions
+MIT License
 
-## Deactivating the Virtual Environment
+## 🤝 Поддержка
 
-When you're done working, deactivate the virtual environment:
+Для подробной инструкции по установке см. [SETUP.md](SETUP.md)
 
-```bash
-deactivate
-```
+---
 
-## Architecture
-
-```
-User → Telegram → Bot Script → Gemini API → Response → User
-```
-
-The bot runs on your local machine/server, receives messages via Telegram's API, sends prompts to Google's Gemini API, and returns responses to the user.
+Made with ❤️ for Alfa Hackathon
