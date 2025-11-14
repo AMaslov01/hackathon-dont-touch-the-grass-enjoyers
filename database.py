@@ -29,30 +29,65 @@ class Database:
                 port=Config.DB_PORT,
                 database=Config.DB_NAME,
                 user=Config.DB_USER,
-                password=Config.DB_PASSWORD
+                password=Config.DB_PASSWORD,
+                # Disable connection timeout for long-running conversations
+                connect_timeout=0,  # No timeout on initial connection
+                keepalives=1,  # Enable TCP keepalive
+                keepalives_idle=30,  # Start keepalive after 30 seconds
+                keepalives_interval=10,  # Send keepalive every 10 seconds
+                keepalives_count=5  # Close connection after 5 failed keepalives
             )
-            logger.info("Database connection pool created successfully")
+            logger.info("Database connection pool created successfully (no timeout)")
             self.create_tables()
         except Exception as e:
             logger.error(f"Failed to connect to database: {e}")
             raise
     
     def get_connection(self):
-        """Get a connection from the pool"""
+        """Get a connection from the pool with no timeouts"""
         if not self.pool:
             raise Exception("Database pool not initialized")
-        return self.pool.getconn()
+        conn = self.pool.getconn()
+        
+        # Configure session to prevent timeouts
+        self.configure_session(conn)
+        
+        return conn
     
     def return_connection(self, conn):
         """Return connection to the pool"""
         if self.pool:
             self.pool.putconn(conn)
     
+    def refresh_connection(self, conn):
+        """Refresh a connection to prevent timeouts during long operations"""
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT 1")
+                conn.commit()
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to refresh connection: {e}")
+            return False
+    
     def close(self):
         """Close all database connections"""
         if self.pool:
             self.pool.closeall()
             logger.info("Database connection pool closed")
+    
+    def configure_session(self, conn):
+        """Configure session settings to prevent timeouts"""
+        try:
+            with conn.cursor() as cursor:
+                # Disable all timeouts for long-running conversations
+                cursor.execute("SET statement_timeout = 0")
+                cursor.execute("SET idle_in_transaction_session_timeout = 0")
+                cursor.execute("SET lock_timeout = 0")
+                conn.commit()
+                logger.debug("Session timeout settings configured")
+        except Exception as e:
+            logger.warning(f"Failed to configure session settings: {e}")
     
     def create_tables(self):
         """Create necessary database tables"""
@@ -69,6 +104,7 @@ class Database:
                         tokens INTEGER NOT NULL DEFAULT 0,
                         max_tokens INTEGER NOT NULL DEFAULT 100,
                         last_token_refresh TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        business_info TEXT,
                         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                     )
@@ -260,6 +296,40 @@ class UserRepository:
         except Exception as e:
             conn.rollback()
             logger.error(f"Failed to add usage history for user {user_id}: {e}")
+        finally:
+            self.db.return_connection(conn)
+    
+    def get_business_info(self, user_id: int) -> Optional[str]:
+        """Get user's business information"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    "SELECT business_info FROM users WHERE user_id = %s",
+                    (user_id,)
+                )
+                result = cursor.fetchone()
+                return result['business_info'] if result else None
+        finally:
+            self.db.return_connection(conn)
+    
+    def save_business_info(self, user_id: int, business_info: str) -> bool:
+        """Save or update user's business information"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE users 
+                    SET business_info = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE user_id = %s
+                """, (business_info, user_id))
+                conn.commit()
+                logger.info(f"Saved business info for user {user_id}")
+                return True
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to save business info for user {user_id}: {e}")
+            return False
         finally:
             self.db.return_connection(conn)
 

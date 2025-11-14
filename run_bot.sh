@@ -5,3 +5,4 @@ cd "$(dirname "$0")"
 source venv/bin/activate
 arch -arm64 python -u bot.py
 
+

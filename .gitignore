@@ -1,3 +1,17 @@
+# Environment variables (IMPORTANT - Contains API keys!)
+config.env
+.env
+*.env
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
