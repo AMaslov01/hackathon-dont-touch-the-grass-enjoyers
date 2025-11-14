@@ -105,6 +105,8 @@ class Database:
                         max_tokens INTEGER NOT NULL DEFAULT 100,
                         last_token_refresh TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         business_info TEXT,
+                        workers_info TEXT,
+                        executors_info TEXT,
                         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                     )
@@ -330,6 +332,105 @@ class UserRepository:
             conn.rollback()
             logger.error(f"Failed to save business info for user {user_id}: {e}")
             return False
+        finally:
+            self.db.return_connection(conn)
+    
+    def get_workers_info(self, user_id: int) -> Optional[str]:
+        """Get user's workers search information"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    "SELECT workers_info FROM users WHERE user_id = %s",
+                    (user_id,)
+                )
+                result = cursor.fetchone()
+                return result['workers_info'] if result else None
+        finally:
+            self.db.return_connection(conn)
+    
+    def save_workers_info(self, user_id: int, workers_info: str) -> bool:
+        """Save or update user's workers search information"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE users 
+                    SET workers_info = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE user_id = %s
+                """, (workers_info, user_id))
+                conn.commit()
+                logger.info(f"Saved workers info for user {user_id}")
+                return True
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to save workers info for user {user_id}: {e}")
+            return False
+        finally:
+            self.db.return_connection(conn)
+    
+    def get_executors_info(self, user_id: int) -> Optional[str]:
+        """Get user's executors search information"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    "SELECT executors_info FROM users WHERE user_id = %s",
+                    (user_id,)
+                )
+                result = cursor.fetchone()
+                return result['executors_info'] if result else None
+        finally:
+            self.db.return_connection(conn)
+    
+    def save_executors_info(self, user_id: int, executors_info: str) -> bool:
+        """Save or update user's executors search information"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE users 
+                    SET executors_info = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE user_id = %s
+                """, (executors_info, user_id))
+                conn.commit()
+                logger.info(f"Saved executors info for user {user_id}")
+                return True
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to save executors info for user {user_id}: {e}")
+            return False
+        finally:
+            self.db.return_connection(conn)
+    
+    def get_all_users_with_business_info(self, exclude_user_id: int = None) -> list:
+        """Get all users who have business_info filled"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                if exclude_user_id:
+                    cursor.execute("""
+                        SELECT user_id, username, first_name, last_name, 
+                               business_info, workers_info, executors_info
+                        FROM users 
+                        WHERE business_info IS NOT NULL 
+                        AND business_info != ''
+                        AND user_id != %s
+                    """, (exclude_user_id,))
+                else:
+                    cursor.execute("""
+                        SELECT user_id, username, first_name, last_name,
+                               business_info, workers_info, executors_info
+                        FROM users 
+                        WHERE business_info IS NOT NULL 
+                        AND business_info != ''
+                    """)
+                
+                results = cursor.fetchall()
+                return [dict(row) for row in results] if results else []
+        except Exception as e:
+            logger.error(f"Failed to get users with business info: {e}")
+            return []
         finally:
             self.db.return_connection(conn)
 

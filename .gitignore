@@ -8,6 +8,11 @@ config.env
 *.sqlite
 *.sqlite3
 
+# PDF generator
+fonts/
+temp_pdfs/
+*.pdf
+
 # Logs
 *.log
 logs/

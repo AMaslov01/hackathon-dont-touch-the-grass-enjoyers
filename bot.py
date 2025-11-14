@@ -33,6 +33,12 @@ logger = logging.getLogger(__name__)
 # Finance conversation states
 CHECKING_EXISTING, QUESTION_1, QUESTION_2, QUESTION_3 = range(4)
 
+# Clients search conversation states
+CLIENTS_CHECKING, CLIENTS_QUESTION = range(4, 6)
+
+# Executors search conversation states
+EXECUTORS_CHECKING, EXECUTORS_QUESTION = range(6, 8)
+
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the /start command"""
@@ -515,6 +521,490 @@ async def finance_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     return ConversationHandler.END
 
 
+# Clients search command handlers
+async def clients_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Start the clients search conversation"""
+    user_id = update.effective_user.id
+    
+    try:
+        # Ensure user exists in database
+        user_manager.get_or_create_user(
+            user_id=user_id,
+            username=update.effective_user.username,
+            first_name=update.effective_user.first_name,
+            last_name=update.effective_user.last_name
+        )
+        
+        # Check if user already has workers info
+        has_info = user_manager.has_workers_info(user_id)
+        
+        if has_info:
+            await update.message.reply_text(
+                MESSAGES['clients_has_info'],
+                parse_mode='Markdown'
+            )
+            return CLIENTS_CHECKING
+        else:
+            # Start the questionnaire
+            await update.message.reply_text(
+                MESSAGES['clients_welcome'],
+                parse_mode='Markdown'
+            )
+            await update.message.reply_text(
+                MESSAGES['clients_question'],
+                parse_mode='Markdown'
+            )
+            return CLIENTS_QUESTION
+            
+    except Exception as e:
+        logger.error(f"Error in clients_start for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+        return ConversationHandler.END
+
+
+async def clients_check_existing(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle response to existing clients data question"""
+    user_id = update.effective_user.id
+    user_response = update.message.text.lower().strip()
+    
+    if user_response in ['да', 'yes', 'y', '+']:
+        # User wants to update - start questionnaire
+        await update.message.reply_text(
+            MESSAGES['clients_welcome'],
+            parse_mode='Markdown'
+        )
+        await update.message.reply_text(
+            MESSAGES['clients_question'],
+            parse_mode='Markdown'
+        )
+        return CLIENTS_QUESTION
+    elif user_response in ['нет', 'net', 'no', 'n', '-']:
+        # User wants to search with existing data
+        return await clients_search(update, context, use_existing=True)
+    else:
+        await update.message.reply_text(
+            MESSAGES['finance_invalid_choice'],
+            parse_mode='Markdown'
+        )
+        return CLIENTS_CHECKING
+
+
+async def clients_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle answer and perform search"""
+    user_id = update.effective_user.id
+    
+    # Save answer to context
+    context.user_data['workers_description'] = update.message.text
+    
+    logger.info(f"User {user_id} provided clients search criteria")
+    
+    # Save workers info to database
+    try:
+        success = user_manager.save_workers_info(
+            user_id=user_id,
+            description=context.user_data['workers_description']
+        )
+        
+        if not success:
+            await update.message.reply_text(MESSAGES['database_error'])
+            return ConversationHandler.END
+        
+        await update.message.reply_text(
+            MESSAGES['clients_saved'],
+            parse_mode='Markdown'
+        )
+        
+    except Exception as e:
+        logger.error(f"Error saving workers info for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+        return ConversationHandler.END
+    
+    # Perform search
+    return await clients_search(update, context, use_existing=False)
+
+
+async def clients_search(update: Update, context: ContextTypes.DEFAULT_TYPE,
+                        use_existing: bool = False) -> int:
+    """Search for clients and send results"""
+    user_id = update.effective_user.id
+    
+    # Show searching message
+    thinking_msg = await update.message.reply_text(MESSAGES['clients_searching'])
+    
+    try:
+        # Check tokens (2 tokens for client search)
+        success, error_msg = user_manager.process_request(user_id, tokens_amount=2)
+        
+        if not success:
+            await thinking_msg.edit_text(
+                MESSAGES['no_tokens'].format(refresh_time=error_msg),
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
+        
+        # Get workers info
+        if use_existing:
+            workers_info = user_manager.get_workers_info(user_id)
+        else:
+            workers_info = {
+                'description': context.user_data['workers_description']
+            }
+        
+        if not workers_info:
+            await thinking_msg.edit_text(MESSAGES['clients_no_info'])
+            return ConversationHandler.END
+        
+        # Search for clients using AI
+        search_results = ai_client.find_clients(workers_info)
+        
+        logger.info(f"Clients search results generated for user {user_id}, length: {len(search_results)}")
+        
+        # Send results
+        try:
+            await thinking_msg.edit_text(
+                f"👥 *Подходящие площадки для поиска клиентов:*\n\n{search_results}",
+                parse_mode='Markdown'
+            )
+        except BadRequest as e:
+            # If Markdown parsing fails, send as plain text
+            logger.warning(f"Markdown parsing failed for user {user_id}, sending as plain text: {e}")
+            await thinking_msg.edit_text(f"👥 Подходящие площадки для поиска клиентов:\n\n{search_results}")
+        
+        # Log usage
+        user_manager.log_usage(
+            user_id,
+            f"Clients search: {workers_info.get('description', '')[:100]}",
+            search_results[:500],
+            tokens_used=2
+        )
+        
+        logger.info(f"Successfully completed clients search for user {user_id}")
+        
+    except Exception as e:
+        logger.error(f"Error in clients search for user {user_id}: {e}", exc_info=True)
+        try:
+            await thinking_msg.edit_text(MESSAGES['clients_error'])
+        except:
+            pass
+    
+    # Clear user data
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
+async def clients_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancel the clients search conversation"""
+    await update.message.reply_text(
+        MESSAGES['clients_cancelled'],
+        parse_mode='Markdown'
+    )
+    context.user_data.clear()
+    logger.info(f"User {update.effective_user.id} cancelled clients search")
+    return ConversationHandler.END
+
+
+# Executors search command handlers
+async def executors_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Start the executors search conversation"""
+    user_id = update.effective_user.id
+    
+    try:
+        # Ensure user exists in database
+        user_manager.get_or_create_user(
+            user_id=user_id,
+            username=update.effective_user.username,
+            first_name=update.effective_user.first_name,
+            last_name=update.effective_user.last_name
+        )
+        
+        # Check if user already has executors info
+        has_info = user_manager.has_executors_info(user_id)
+        
+        if has_info:
+            await update.message.reply_text(
+                MESSAGES['executors_has_info'],
+                parse_mode='Markdown'
+            )
+            return EXECUTORS_CHECKING
+        else:
+            # Start the questionnaire
+            await update.message.reply_text(
+                MESSAGES['executors_welcome'],
+                parse_mode='Markdown'
+            )
+            await update.message.reply_text(
+                MESSAGES['executors_question'],
+                parse_mode='Markdown'
+            )
+            return EXECUTORS_QUESTION
+            
+    except Exception as e:
+        logger.error(f"Error in executors_start for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+        return ConversationHandler.END
+
+
+async def executors_check_existing(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle response to existing executors data question"""
+    user_id = update.effective_user.id
+    user_response = update.message.text.lower().strip()
+    
+    if user_response in ['да', 'yes', 'y', '+']:
+        # User wants to update - start questionnaire
+        await update.message.reply_text(
+            MESSAGES['executors_welcome'],
+            parse_mode='Markdown'
+        )
+        await update.message.reply_text(
+            MESSAGES['executors_question'],
+            parse_mode='Markdown'
+        )
+        return EXECUTORS_QUESTION
+    elif user_response in ['нет', 'net', 'no', 'n', '-']:
+        # User wants to search with existing data
+        return await executors_search(update, context, use_existing=True)
+    else:
+        await update.message.reply_text(
+            MESSAGES['finance_invalid_choice'],
+            parse_mode='Markdown'
+        )
+        return EXECUTORS_CHECKING
+
+
+async def executors_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle answer and perform search"""
+    user_id = update.effective_user.id
+    
+    # Save answer to context
+    context.user_data['executors_description'] = update.message.text
+    
+    logger.info(f"User {user_id} provided executors search criteria")
+    
+    # Save executors info to database
+    try:
+        success = user_manager.save_executors_info(
+            user_id=user_id,
+            description=context.user_data['executors_description']
+        )
+        
+        if not success:
+            await update.message.reply_text(MESSAGES['database_error'])
+            return ConversationHandler.END
+        
+        await update.message.reply_text(
+            MESSAGES['executors_saved'],
+            parse_mode='Markdown'
+        )
+        
+    except Exception as e:
+        logger.error(f"Error saving executors info for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+        return ConversationHandler.END
+    
+    # Perform search
+    return await executors_search(update, context, use_existing=False)
+
+
+async def executors_search(update: Update, context: ContextTypes.DEFAULT_TYPE,
+                           use_existing: bool = False) -> int:
+    """Search for executors and send results"""
+    user_id = update.effective_user.id
+    
+    # Show searching message
+    thinking_msg = await update.message.reply_text(MESSAGES['executors_searching'])
+    
+    try:
+        # Check tokens (2 tokens for executors search)
+        success, error_msg = user_manager.process_request(user_id, tokens_amount=2)
+        
+        if not success:
+            await thinking_msg.edit_text(
+                MESSAGES['no_tokens'].format(refresh_time=error_msg),
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
+        
+        # Get executors info
+        if use_existing:
+            executors_info = user_manager.get_executors_info(user_id)
+        else:
+            executors_info = {
+                'description': context.user_data['executors_description']
+            }
+        
+        if not executors_info:
+            await thinking_msg.edit_text(MESSAGES['executors_no_info'])
+            return ConversationHandler.END
+        
+        # Search for executors using AI
+        search_results = ai_client.find_executors(executors_info)
+        
+        logger.info(f"Executors search results generated for user {user_id}, length: {len(search_results)}")
+        
+        # Send results
+        try:
+            await thinking_msg.edit_text(
+                f"🔨 *Подходящие площадки для поиска исполнителей:*\n\n{search_results}",
+                parse_mode='Markdown'
+            )
+        except BadRequest as e:
+            # If Markdown parsing fails, send as plain text
+            logger.warning(f"Markdown parsing failed for user {user_id}, sending as plain text: {e}")
+            await thinking_msg.edit_text(f"🔨 Подходящие площадки для поиска исполнителей:\n\n{search_results}")
+        
+        # Log usage
+        user_manager.log_usage(
+            user_id,
+            f"Executors search: {executors_info.get('description', '')[:100]}",
+            search_results[:500],
+            tokens_used=2
+        )
+        
+        logger.info(f"Successfully completed executors search for user {user_id}")
+        
+    except Exception as e:
+        logger.error(f"Error in executors search for user {user_id}: {e}", exc_info=True)
+        try:
+            await thinking_msg.edit_text(MESSAGES['executors_error'])
+        except:
+            pass
+    
+    # Clear user data
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
+async def executors_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancel the executors search conversation"""
+    await update.message.reply_text(
+        MESSAGES['executors_cancelled'],
+        parse_mode='Markdown'
+    )
+    context.user_data.clear()
+    logger.info(f"User {update.effective_user.id} cancelled executors search")
+    return ConversationHandler.END
+
+
+# Find similar users command handler
+async def find_similar_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle the /find_similar command to find similar users for collaboration"""
+    user_id = update.effective_user.id
+    user = update.effective_user
+    
+    try:
+        # Ensure user exists in database
+        user_manager.get_or_create_user(
+            user_id=user_id,
+            username=user.username,
+            first_name=user.first_name,
+            last_name=user.last_name
+        )
+        
+        # Check if user has business_info
+        if not user_manager.has_business_info(user_id):
+            await update.message.reply_text(
+                MESSAGES['similar_no_business_info'],
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Show welcome message
+        await update.message.reply_text(
+            MESSAGES['similar_welcome'],
+            parse_mode='Markdown'
+        )
+        
+        # Show searching message
+        thinking_msg = await update.message.reply_text(MESSAGES['similar_searching'])
+        
+        try:
+            # Check tokens (2 tokens for similar users search)
+            success, error_msg = user_manager.process_request(user_id, tokens_amount=2)
+            
+            if not success:
+                await thinking_msg.edit_text(
+                    MESSAGES['no_tokens'].format(refresh_time=error_msg),
+                    parse_mode='Markdown'
+                )
+                return
+            
+            # Get current user's information
+            current_user_business_info = user_manager.get_business_info(user_id)
+            current_user_info = {
+                'user_id': user_id,
+                'username': user.username,
+                'business_info': current_user_business_info
+            }
+            
+            # Get all other users with business_info
+            from database import user_repo
+            other_users = user_repo.get_all_users_with_business_info(exclude_user_id=user_id)
+            
+            if not other_users:
+                await thinking_msg.edit_text(MESSAGES['similar_no_users'])
+                return
+            
+            # Parse business_info for each user
+            parsed_users = []
+            for user_data in other_users:
+                try:
+                    import json
+                    parsed_user = {
+                        'user_id': user_data['user_id'],
+                        'username': user_data.get('username'),
+                        'business_info': json.loads(user_data['business_info']) if user_data.get('business_info') else {},
+                        'workers_info': json.loads(user_data['workers_info']) if user_data.get('workers_info') else {},
+                        'executors_info': json.loads(user_data['executors_info']) if user_data.get('executors_info') else {}
+                    }
+                    parsed_users.append(parsed_user)
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse data for user {user_data['user_id']}")
+                    continue
+            
+            if not parsed_users:
+                await thinking_msg.edit_text(MESSAGES['similar_no_users'])
+                return
+            
+            logger.info(f"Finding similar users for {user_id} among {len(parsed_users)} candidates")
+            
+            # Find similar users using AI
+            search_results = ai_client.find_similar_users(current_user_info, parsed_users)
+            
+            logger.info(f"Similar users results generated for user {user_id}, length: {len(search_results)}")
+            
+            # Send results
+            try:
+                await thinking_msg.edit_text(
+                    f"🤝 *Подходящие партнёры для сотрудничества:*\n\n{search_results}",
+                    parse_mode='Markdown'
+                )
+            except BadRequest as e:
+                # If Markdown parsing fails, send as plain text
+                logger.warning(f"Markdown parsing failed for user {user_id}, sending as plain text: {e}")
+                await thinking_msg.edit_text(f"🤝 Подходящие партнёры для сотрудничества:\n\n{search_results}")
+            
+            # Log usage
+            user_manager.log_usage(
+                user_id,
+                f"Find similar users search",
+                search_results[:500],
+                tokens_used=2
+            )
+            
+            logger.info(f"Successfully completed find_similar for user {user_id}")
+            
+        except Exception as e:
+            logger.error(f"Error in find_similar for user {user_id}: {e}", exc_info=True)
+            try:
+                await thinking_msg.edit_text(MESSAGES['similar_error'])
+            except:
+                pass
+    
+    except Exception as e:
+        logger.error(f"Error in find_similar_command for user {user_id}: {e}", exc_info=True)
+        await update.message.reply_text(MESSAGES['similar_error'])
+
+
 def main() -> None:
     """Start the bot"""
     try:
@@ -549,6 +1039,7 @@ def main() -> None:
         application.add_handler(CommandHandler("start", start_command))
         application.add_handler(CommandHandler("balance", balance_command))
         application.add_handler(CommandHandler("help", help_command))
+        application.add_handler(CommandHandler("find_similar", find_similar_command))
         
         # Register finance conversation handler
         finance_handler = ConversationHandler(
@@ -570,6 +1061,36 @@ def main() -> None:
             fallbacks=[CommandHandler("cancel", finance_cancel)],
         )
         application.add_handler(finance_handler)
+        
+        # Register clients search conversation handler
+        clients_handler = ConversationHandler(
+            entry_points=[CommandHandler("clients", clients_start)],
+            states={
+                CLIENTS_CHECKING: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, clients_check_existing)
+                ],
+                CLIENTS_QUESTION: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, clients_answer)
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", clients_cancel)],
+        )
+        application.add_handler(clients_handler)
+        
+        # Register executors search conversation handler
+        executors_handler = ConversationHandler(
+            entry_points=[CommandHandler("executors", executors_start)],
+            states={
+                EXECUTORS_CHECKING: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, executors_check_existing)
+                ],
+                EXECUTORS_QUESTION: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, executors_answer)
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", executors_cancel)],
+        )
+        application.add_handler(executors_handler)
         
         # Register message handler
         application.add_handler(

@@ -20,20 +20,185 @@ from reportlab.platypus import (
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase.pdfmetrics import registerFontFamily
-from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 
 logger = logging.getLogger(__name__)
 
 
-# Register CID fonts for Unicode (including Cyrillic) support
-try:
-    pdfmetrics.registerFont(UnicodeCIDFont('HeiseiMin-W3'))  # Japanese font that supports wide Unicode
-    pdfmetrics.registerFont(UnicodeCIDFont('HeiseiKakuGo-W5'))
-    _FONTS_AVAILABLE = True
-    logger.info("CID Unicode fonts registered")
-except Exception as e:
-    logger.warning(f"Could not register CID fonts: {e}")
-    _FONTS_AVAILABLE = False
+def download_dejavu_fonts():
+    """
+    Download DejaVu fonts if not found in system
+    Returns the directory where fonts are stored
+    """
+    try:
+        import urllib.request
+        import zipfile
+        import io
+        
+        fonts_dir = Path(__file__).parent / "fonts"
+        fonts_dir.mkdir(exist_ok=True)
+        
+        # Check if fonts already downloaded
+        required_fonts = [
+            'DejaVuSans.ttf',
+            'DejaVuSans-Bold.ttf',
+            'DejaVuSans-Oblique.ttf',
+            'DejaVuSans-BoldOblique.ttf'
+        ]
+        
+        all_exist = all((fonts_dir / font).exists() for font in required_fonts)
+        if all_exist:
+            logger.info("DejaVu fonts already downloaded")
+            return str(fonts_dir)
+        
+        logger.info("Downloading DejaVu fonts...")
+        url = "https://github.com/dejavu-fonts/dejavu-fonts/releases/download/version_2_37/dejavu-fonts-ttf-2.37.zip"
+        
+        # Download and extract
+        response = urllib.request.urlopen(url, timeout=30)
+        zip_data = io.BytesIO(response.read())
+        
+        with zipfile.ZipFile(zip_data) as zip_file:
+            for font in required_fonts:
+                # Find font in zip (it's in ttf/ subdirectory)
+                zip_path = f"dejavu-fonts-ttf-2.37/ttf/{font}"
+                try:
+                    zip_file.extract(zip_path, fonts_dir)
+                    # Move from subdirectory to fonts_dir
+                    extracted_path = fonts_dir / "dejavu-fonts-ttf-2.37" / "ttf" / font
+                    target_path = fonts_dir / font
+                    if extracted_path.exists():
+                        extracted_path.rename(target_path)
+                    logger.info(f"Downloaded {font}")
+                except KeyError:
+                    logger.warning(f"Font {font} not found in archive")
+        
+        # Cleanup extracted directory
+        extracted_dir = fonts_dir / "dejavu-fonts-ttf-2.37"
+        if extracted_dir.exists():
+            import shutil
+            shutil.rmtree(extracted_dir)
+        
+        logger.info("DejaVu fonts downloaded successfully")
+        return str(fonts_dir)
+        
+    except Exception as e:
+        logger.warning(f"Could not download DejaVu fonts: {e}")
+        return None
+
+
+def register_fonts():
+    """
+    Register fonts with Cyrillic support
+    Try to use DejaVuSans (best for Cyrillic), fallback to system fonts
+    """
+    global _FONTS_AVAILABLE, _FONT_NORMAL, _FONT_BOLD, _FONT_ITALIC, _FONT_BOLD_ITALIC
+    
+    try:
+        # Try to find DejaVu fonts in system or download them
+        dejavu_locations = [
+            # Local fonts directory (downloaded)
+            str(Path(__file__).parent / "fonts"),
+            # Common Linux locations
+            '/usr/share/fonts/truetype/dejavu',
+            # macOS locations
+            '/System/Library/Fonts/Supplemental',
+            '/Library/Fonts',
+            # Windows locations
+            'C:/Windows/Fonts',
+        ]
+        
+        # Try to download fonts if not found
+        downloaded_dir = download_dejavu_fonts()
+        if downloaded_dir and downloaded_dir not in dejavu_locations:
+            dejavu_locations.insert(0, downloaded_dir)
+        
+        dejavu_files = {
+            'normal': 'DejaVuSans.ttf',
+            'bold': 'DejaVuSans-Bold.ttf',
+            'italic': 'DejaVuSans-Oblique.ttf',
+            'bolditalic': 'DejaVuSans-BoldOblique.ttf'
+        }
+        
+        fonts_found = {}
+        
+        # Search for fonts in all locations
+        for location in dejavu_locations:
+            if not os.path.exists(location):
+                continue
+            
+            for style, filename in dejavu_files.items():
+                if style in fonts_found:
+                    continue  # Already found
+                
+                font_path = os.path.join(location, filename)
+                if os.path.exists(font_path):
+                    try:
+                        font_name = f'DejaVuSans-{style.capitalize()}'
+                        pdfmetrics.registerFont(TTFont(font_name, font_path))
+                        fonts_found[style] = font_name
+                        logger.info(f"Registered {font_name} from {font_path}")
+                    except Exception as e:
+                        logger.warning(f"Could not register {font_path}: {e}")
+        
+        # Check if we have at least normal and bold
+        if 'normal' in fonts_found and 'bold' in fonts_found:
+            # Register font family
+            try:
+                registerFontFamily('DejaVuSans',
+                                 normal=fonts_found.get('normal', 'DejaVuSans-Normal'),
+                                 bold=fonts_found.get('bold', 'DejaVuSans-Bold'),
+                                 italic=fonts_found.get('italic', 'DejaVuSans-Normal'),
+                                 boldItalic=fonts_found.get('bolditalic', 'DejaVuSans-Bold'))
+            except:
+                pass
+            
+            _FONT_NORMAL = fonts_found.get('normal', 'DejaVuSans-Normal')
+            _FONT_BOLD = fonts_found.get('bold', 'DejaVuSans-Bold')
+            _FONT_ITALIC = fonts_found.get('italic', _FONT_NORMAL)
+            _FONT_BOLD_ITALIC = fonts_found.get('bolditalic', _FONT_BOLD)
+            _FONTS_AVAILABLE = True
+            logger.info("DejaVuSans fonts successfully registered")
+            return True
+        
+        # Try Arial Unicode (macOS fallback)
+        arial_unicode_paths = [
+            '/System/Library/Fonts/Supplemental/Arial Unicode.ttf',
+            '/Library/Fonts/Arial Unicode.ttf'
+        ]
+        
+        for arial_path in arial_unicode_paths:
+            if os.path.exists(arial_path):
+                pdfmetrics.registerFont(TTFont('ArialUnicode', arial_path))
+                _FONT_NORMAL = 'ArialUnicode'
+                _FONT_BOLD = 'ArialUnicode'
+                _FONT_ITALIC = 'ArialUnicode'
+                _FONT_BOLD_ITALIC = 'ArialUnicode'
+                _FONTS_AVAILABLE = True
+                logger.info("Arial Unicode font registered")
+                return True
+        
+        raise Exception("No suitable Unicode fonts found")
+        
+    except Exception as e:
+        logger.warning(f"Could not register Unicode fonts: {e}")
+        logger.warning("Falling back to Helvetica (Cyrillic may not display correctly)")
+        _FONT_NORMAL = 'Helvetica'
+        _FONT_BOLD = 'Helvetica-Bold'
+        _FONT_ITALIC = 'Helvetica-Oblique'
+        _FONT_BOLD_ITALIC = 'Helvetica-BoldOblique'
+        _FONTS_AVAILABLE = False
+        return False
+
+
+# Global font variables
+_FONTS_AVAILABLE = False
+_FONT_NORMAL = 'Helvetica'
+_FONT_BOLD = 'Helvetica-Bold'
+_FONT_ITALIC = 'Helvetica-Oblique'
+_FONT_BOLD_ITALIC = 'Helvetica-BoldOblique'
+
+# Try to register fonts on import
+register_fonts()
 
 
 def clean_text_for_pdf(text: str) -> str:
@@ -43,16 +208,37 @@ def clean_text_for_pdf(text: str) -> str:
     """
     import re
     
+    # First, remove BOM and other invisible characters
+    # Remove BOM (Byte Order Mark)
+    text = text.replace('\ufeff', '')
+    # Remove zero-width spaces and joiners
+    text = text.replace('\u200b', '')  # Zero-width space
+    text = text.replace('\u200c', '')  # Zero-width non-joiner
+    text = text.replace('\u200d', '')  # Zero-width joiner
+    text = text.replace('\ufff9', '')  # Interlinear annotation anchor
+    text = text.replace('\ufffa', '')  # Interlinear annotation separator
+    text = text.replace('\ufffb', '')  # Interlinear annotation terminator
+    
+    # Remove control characters (except newlines and tabs)
+    text = re.sub(r'[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f-\x9f]', '', text)
+    
     # Remove emojis and special Unicode characters
     # Keep: Cyrillic (0400-04FF), Latin (0000-007F, 0080-00FF), 
-    # numbers, basic punctuation, newlines
-    cleaned = re.sub(r'[^\u0000-\u007F\u0080-\u00FF\u0400-\u04FF\s\-–—.,!?:;()"\'\[\]{}@#$%^&*+=<>|~/\\\n]', '', text)
+    # Extended Latin (0100-017F), numbers, basic punctuation, newlines
+    # Currency symbols: Euro (20AC), Ruble (20BD), Dollar, etc.
+    # Common special chars: dashes (2013-2015), quotes (2018-201D), bullet (2022)
+    cleaned = re.sub(
+        r'[^\u0000-\u007F\u0080-\u00FF\u0100-\u017F\u0400-\u04FF'
+        r'\u2013-\u2015\u2018-\u201D\u2020-\u2022\u20AC\u20BD'
+        r'\s\-.,!?:;()"\'\[\]{}@#№$%^&*+=<>|~/\\\n]', 
+        '', text)
     
-    # Don't replace newlines, but clean up multiple spaces on same line
+    # Clean up whitespace - normalize spaces but keep single spaces between words
     lines = cleaned.split('\n')
-    lines = [re.sub(r'[ \t]+', ' ', line) for line in lines]
+    lines = [' '.join(line.split()) for line in lines]  # This properly normalizes spaces
     cleaned = '\n'.join(lines)
     
+    # Final strip to remove leading/trailing whitespace
     return cleaned.strip()
 
 
@@ -84,10 +270,10 @@ class FinancialPlanPDF:
         
     def _setup_styles(self):
         """Setup custom styles for the document"""
-        # Choose font based on availability - HeiseiMin-W3 supports Cyrillic
-        font_normal = 'HeiseiMin-W3' if _FONTS_AVAILABLE else 'Helvetica'
-        font_bold = 'HeiseiKakuGo-W5' if _FONTS_AVAILABLE else 'Helvetica-Bold'
-        font_italic = 'HeiseiMin-W3' if _FONTS_AVAILABLE else 'Helvetica-Oblique'
+        # Use registered fonts (DejaVuSans or fallback to Helvetica)
+        font_normal = _FONT_NORMAL
+        font_bold = _FONT_BOLD
+        font_italic = _FONT_ITALIC
         
         # Title style
         self.styles.add(ParagraphStyle(
@@ -146,16 +332,15 @@ class FinancialPlanPDF:
     
     def _add_header(self, user_name: str = None):
         """Add document header"""
-        # Title - remove emoji for compatibility
-        self.story.append(Paragraph("Финансовый План", self.styles['CustomTitle']))
+        # Title - clean text to avoid special characters
+        title = clean_text_for_pdf("Финансовый План")
+        self.story.append(Paragraph(title, self.styles['CustomTitle']))
         
         # Metadata
         date_str = datetime.now().strftime("%d.%m.%Y")
-        if user_name:
-            meta = f"Подготовлено для: {user_name}<br/>Дата: {date_str}"
-        else:
-            meta = f"Дата: {date_str}"
+        meta = f"{date_str}"
         
+        # Note: meta contains HTML tags (<br/>), don't clean it
         self.story.append(Paragraph(meta, self.styles['Normal']))
         self.story.append(Spacer(1, 20))
         
@@ -201,7 +386,8 @@ class FinancialPlanPDF:
     
     def _add_section(self, title: str, content: str, level: int = 1):
         """Add a section to the document"""
-        # Section title (already cleaned, just format)
+        # Section title - clean and format
+        title = clean_text_for_pdf(title)
         title = format_text_for_pdf(title)
         style_name = f'CustomHeading{level}' if level <= 2 else 'CustomBody'
         self.story.append(Paragraph(title, self.styles[style_name]))
@@ -214,7 +400,8 @@ class FinancialPlanPDF:
             if not para:
                 continue
             
-            # Apply text formatting (bold, italic)
+            # Clean and apply text formatting (bold, italic)
+            para = clean_text_for_pdf(para)
             para = format_text_for_pdf(para)
             
             # Detect indentation level for nested lists
@@ -262,7 +449,7 @@ class FinancialPlanPDF:
             return None
         
         # Parse header
-        header = [cell.strip() for cell in lines[0].split('|') if cell.strip()]
+        header = [clean_text_for_pdf(cell.strip()) for cell in lines[0].split('|') if cell.strip()]
         if not header:
             return None
         
@@ -272,7 +459,7 @@ class FinancialPlanPDF:
         # Parse data rows
         for line in lines[2:]:  # Skip header and separator
             if '|' in line:
-                row = [cell.strip() for cell in line.split('|') if cell.strip()]
+                row = [clean_text_for_pdf(cell.strip()) for cell in line.split('|') if cell.strip()]
                 if row:
                     data.append(row)
         
@@ -283,9 +470,9 @@ class FinancialPlanPDF:
         col_widths = [18*cm / len(header)] * len(header)
         table = Table(data, colWidths=col_widths)
         
-        # Choose fonts - HeiseiKakuGo-W5 for bold (actually it's a different weight)
-        font_bold = 'HeiseiKakuGo-W5' if _FONTS_AVAILABLE else 'Helvetica-Bold'
-        font_normal = 'HeiseiMin-W3' if _FONTS_AVAILABLE else 'Helvetica'
+        # Use registered fonts
+        font_bold = _FONT_BOLD
+        font_normal = _FONT_NORMAL
         
         # Style table
         table.setStyle(TableStyle([
@@ -320,11 +507,11 @@ class FinancialPlanPDF:
         """Add document footer"""
         self.story.append(Spacer(1, 20))
         
-        footer_text = (
-            "<i>Этот финансовый план был создан автоматически на основе предоставленной вами информации. "
-            "Рекомендуется проконсультироваться с профессиональным финансовым консультантом "
-            "перед принятием серьезных финансовых решений.</i>"
+        # Clean the text content but preserve HTML tags
+        footer_content = clean_text_for_pdf(
+            'AI-generated. For reference only.'
         )
+        footer_text = f"<i>{footer_content}</i>"
         self.story.append(Paragraph(footer_text, self.styles['Normal']))
     
     def generate(self, 
@@ -380,26 +567,30 @@ class FinancialPlanPDF:
             self.story = []
             self._add_header(user_name)
             
-            # Add business info section (without emoji)
-            self.story.append(Paragraph("Информация о бизнесе", self.styles['CustomHeading1']))
+            # Add business info section - clean all text
+            heading = clean_text_for_pdf("Информация о бизнесе")
+            self.story.append(Paragraph(heading, self.styles['CustomHeading1']))
             self.story.append(Spacer(1, 6))
             
             if business_info.get('business_type'):
-                text = f"<b>Тип бизнеса:</b> {business_info['business_type']}"
+                label = clean_text_for_pdf("Тип бизнеса:")
+                text = f"<b>{label}</b> {business_info['business_type']}"
                 self.story.append(Paragraph(text, self.styles['CustomBody']))
             
             if business_info.get('financial_situation'):
                 situation = business_info['financial_situation']
                 if len(situation) > 200:
                     situation = situation[:200] + '...'
-                text = f"<b>Финансовая ситуация:</b> {situation}"
+                label = clean_text_for_pdf("Финансовая ситуация:")
+                text = f"<b>{label}</b> {situation}"
                 self.story.append(Paragraph(text, self.styles['CustomBody']))
             
             if business_info.get('goals'):
                 goals = business_info['goals']
                 if len(goals) > 200:
                     goals = goals[:200] + '...'
-                text = f"<b>Цели:</b> {goals}"
+                label = clean_text_for_pdf("Цели:")
+                text = f"<b>{label}</b> {goals}"
                 self.story.append(Paragraph(text, self.styles['CustomBody']))
             
             self.story.append(Spacer(1, 20))
@@ -462,4 +653,3 @@ class FinancialPlanPDF:
 
 # Global PDF generator instance
 pdf_generator = FinancialPlanPDF()
-

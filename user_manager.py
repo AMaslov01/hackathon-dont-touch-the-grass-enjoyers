@@ -211,6 +211,114 @@ class UserManager:
             True if user has business info, False otherwise
         """
         return self.get_business_info(user_id) is not None
+    
+    def get_workers_info(self, user_id: int) -> Optional[dict]:
+        """
+        Get user's workers search information
+        
+        Args:
+            user_id: Telegram user ID
+            
+        Returns:
+            Dictionary with workers search information or None
+        """
+        info_json = user_repo.get_workers_info(user_id)
+        if info_json:
+            try:
+                return json.loads(info_json)
+            except json.JSONDecodeError:
+                logger.error(f"Failed to parse workers info for user {user_id}")
+                return None
+        return None
+    
+    def save_workers_info(self, user_id: int, description: str) -> bool:
+        """
+        Save user's workers search information
+        
+        Args:
+            user_id: Telegram user ID
+            description: Description of needed workers/employees
+            
+        Returns:
+            True if saved successfully, False otherwise
+        """
+        workers_info = {
+            'description': description,
+            'updated_at': datetime.now().isoformat()
+        }
+        
+        try:
+            info_json = json.dumps(workers_info, ensure_ascii=False)
+            return user_repo.save_workers_info(user_id, info_json)
+        except Exception as e:
+            logger.error(f"Failed to save workers info for user {user_id}: {e}")
+            return False
+    
+    def has_workers_info(self, user_id: int) -> bool:
+        """
+        Check if user has saved workers search information
+        
+        Args:
+            user_id: Telegram user ID
+            
+        Returns:
+            True if user has workers info, False otherwise
+        """
+        return self.get_workers_info(user_id) is not None
+    
+    def get_executors_info(self, user_id: int) -> Optional[dict]:
+        """
+        Get user's executors search information
+        
+        Args:
+            user_id: Telegram user ID
+            
+        Returns:
+            Dictionary with executors search information or None
+        """
+        info_json = user_repo.get_executors_info(user_id)
+        if info_json:
+            try:
+                return json.loads(info_json)
+            except json.JSONDecodeError:
+                logger.error(f"Failed to parse executors info for user {user_id}")
+                return None
+        return None
+    
+    def save_executors_info(self, user_id: int, description: str) -> bool:
+        """
+        Save user's executors search information
+        
+        Args:
+            user_id: Telegram user ID
+            description: Description of needed executors/freelancers
+            
+        Returns:
+            True if saved successfully, False otherwise
+        """
+        executors_info = {
+            'description': description,
+            'updated_at': datetime.now().isoformat()
+        }
+        
+        try:
+            info_json = json.dumps(executors_info, ensure_ascii=False)
+            return user_repo.save_executors_info(user_id, info_json)
+        except Exception as e:
+            logger.error(f"Failed to save executors info for user {user_id}: {e}")
+            return False
+    
+    def has_executors_info(self, user_id: int) -> bool:
+        """
+        Check if user has saved executors search information
+        
+        Args:
+            user_id: Telegram user ID
+            
+        Returns:
+            True if user has executors info, False otherwise
+        """
+        return self.get_executors_info(user_id) is not None
 
 
 # Global user manager instance

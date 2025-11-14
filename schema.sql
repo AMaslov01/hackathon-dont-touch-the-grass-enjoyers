@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS users (
     max_tokens INTEGER NOT NULL DEFAULT 100,
     last_token_refresh TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     business_info TEXT,
+    workers_info TEXT,
+    executors_info TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
