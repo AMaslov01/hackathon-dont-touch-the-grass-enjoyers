@@ -3,12 +3,13 @@ Telegram bot with AI integration, user accounts, and token system
 """
 import os
 import logging
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, 
     CommandHandler, 
     MessageHandler, 
     ConversationHandler,
+    CallbackQueryHandler,
     filters, 
     ContextTypes
 )
@@ -44,6 +45,14 @@ INVITATION_RESPONSE = range(9, 10)
 
 # Task creation states
 TASK_DESCRIPTION = range(10, 11)
+
+# Multi-step command states
+ADD_EMPLOYEE_USERNAME = range(11, 12)
+ACCEPT_INVITATION_ID = range(12, 13)
+REJECT_INVITATION_ID = range(13, 14)
+TAKE_TASK_ID = range(14, 15)
+ASSIGN_TASK_ID, ASSIGN_TASK_USERNAME = range(15, 17)
+COMPLETE_TASK_ID = range(17, 18)
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -898,8 +907,8 @@ async def executors_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 # Employee management command handlers
-async def add_employee_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle the /add_employee command to invite an employee"""
+async def add_employee_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Start the add_employee conversation"""
     user_id = update.effective_user.id
     
     try:
@@ -909,18 +918,35 @@ async def add_employee_command(update: Update, context: ContextTypes.DEFAULT_TYP
                 MESSAGES['employee_no_business'],
                 parse_mode='Markdown'
             )
-            return
+            return ConversationHandler.END
         
-        # Get target username from command arguments
-        if not context.args or len(context.args) == 0:
-            await update.message.reply_text(
-                "⚠️ Укажите username пользователя:\n`/add_employee @username`",
-                parse_mode='Markdown'
-            )
-            return
+        # Ask for username
+        await update.message.reply_text(
+            "👤 Пожалуйста, укажите username пользователя, которого хотите пригласить:\n\n"
+            "Например: `@username` или `username`",
+            parse_mode='Markdown'
+        )
+        return ADD_EMPLOYEE_USERNAME
         
-        target_username = context.args[0].lstrip('@')
-        
+    except Exception as e:
+        logger.error(f"Error in add_employee_start for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+        return ConversationHandler.END
+
+
+async def add_employee_username_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle username input for add_employee"""
+    target_username = update.message.text.lstrip('@').strip()
+    context.user_data['target_username'] = target_username
+    return await add_employee_process(update, context)
+
+
+async def add_employee_process(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Process the employee invitation"""
+    user_id = update.effective_user.id
+    target_username = context.user_data.get('target_username')
+    
+    try:
         # Invite employee
         success, message = user_manager.invite_employee(user_id, target_username)
         
@@ -930,18 +956,37 @@ async def add_employee_command(update: Update, context: ContextTypes.DEFAULT_TYP
                 parse_mode='Markdown'
             )
             
-            # Notify the invited user
+            # Notify the invited user with inline buttons
             target_user_id = user_manager.get_user_by_username(target_username)
             if target_user_id:
                 try:
                     business = user_manager.get_business(user_id)
-                    await context.bot.send_message(
-                        chat_id=target_user_id,
-                        text=f"🎉 *Новое приглашение!*\n\n"
-                             f"Вас пригласили стать сотрудником бизнеса *{business['business_name']}*\n\n"
-                             f"Используйте `/invitations` чтобы посмотреть приглашения и принять/отклонить их.",
-                        parse_mode='Markdown'
-                    )
+                    # Get the invitation ID
+                    invitations = user_manager.get_pending_invitations(target_user_id)
+                    invitation_id = None
+                    for inv in invitations:
+                        if inv['business_name'] == business['business_name']:
+                            invitation_id = inv['id']
+                            break
+                    
+                    if invitation_id:
+                        # Create inline keyboard with Accept/Reject buttons
+                        keyboard = [
+                            [
+                                InlineKeyboardButton("✅ Принять", callback_data=f"accept_inv_{invitation_id}"),
+                                InlineKeyboardButton("❌ Отклонить", callback_data=f"reject_inv_{invitation_id}")
+                            ]
+                        ]
+                        reply_markup = InlineKeyboardMarkup(keyboard)
+                        
+                        await context.bot.send_message(
+                            chat_id=target_user_id,
+                            text=f"🎉 *Новое приглашение!*\n\n"
+                                 f"Вас пригласили стать сотрудником бизнеса *{business['business_name']}*\n\n"
+                                 f"Выберите действие:",
+                            parse_mode='Markdown',
+                            reply_markup=reply_markup
+                        )
                 except Exception as e:
                     logger.warning(f"Failed to notify user {target_user_id}: {e}")
         else:
@@ -953,8 +998,20 @@ async def add_employee_command(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.info(f"User {user_id} invited {target_username}: {success}")
         
     except Exception as e:
-        logger.error(f"Error in add_employee command for user {user_id}: {e}")
+        logger.error(f"Error in add_employee_process for user {user_id}: {e}")
         await update.message.reply_text(MESSAGES['database_error'])
+    
+    finally:
+        context.user_data.clear()
+    
+    return ConversationHandler.END
+
+
+async def add_employee_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancel add employee conversation"""
+    await update.message.reply_text("❌ Приглашение сотрудника отменено")
+    context.user_data.clear()
+    return ConversationHandler.END
 
 
 async def employees_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1048,29 +1105,107 @@ async def invitations_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text(MESSAGES['database_error'])
 
 
-async def accept_invitation_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle the /accept command to accept an invitation"""
+async def invitation_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle inline button callbacks for invitations"""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = update.effective_user.id
+    data = query.data
+    
+    try:
+        # Parse callback data
+        if data.startswith("accept_inv_"):
+            invitation_id = int(data.replace("accept_inv_", ""))
+            accept = True
+            action_text = "принято"
+        elif data.startswith("reject_inv_"):
+            invitation_id = int(data.replace("reject_inv_", ""))
+            accept = False
+            action_text = "отклонено"
+        else:
+            return
+        
+        # Process invitation response
+        success = user_manager.respond_to_invitation(invitation_id, accept=accept)
+        
+        if success:
+            if accept:
+                await query.edit_message_text(
+                    text=f"✅ {MESSAGES['invitation_accepted']}",
+                    parse_mode='Markdown'
+                )
+            else:
+                await query.edit_message_text(
+                    text=f"❌ {MESSAGES['invitation_rejected']}",
+                    parse_mode='Markdown'
+                )
+        else:
+            await query.edit_message_text(
+                text=MESSAGES['invitation_not_found'],
+                parse_mode='Markdown'
+            )
+        
+        logger.info(f"User {user_id} {action_text} invitation {invitation_id} via button: {success}")
+        
+    except Exception as e:
+        logger.error(f"Error in invitation callback handler for user {user_id}: {e}")
+        await query.edit_message_text(MESSAGES['database_error'])
+
+
+async def accept_invitation_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Start the accept invitation conversation"""
     user_id = update.effective_user.id
     
     try:
-        # Get invitation ID from command arguments
-        if not context.args or len(context.args) == 0:
+        # Get pending invitations to show user
+        invitations = user_manager.get_pending_invitations(user_id)
+        
+        if not invitations:
             await update.message.reply_text(
-                "⚠️ Укажите ID приглашения:\n`/accept <id>`\n\n"
-                "Используйте `/invitations` чтобы посмотреть список приглашений.",
+                MESSAGES['invitations_empty'],
                 parse_mode='Markdown'
             )
-            return
+            return ConversationHandler.END
         
-        try:
-            invitation_id = int(context.args[0])
-        except ValueError:
-            await update.message.reply_text(
-                "❌ Неверный формат ID. Используйте число.",
-                parse_mode='Markdown'
-            )
-            return
+        # Format invitations list
+        invitations_text = "📬 *Ваши приглашения:*\n\n"
+        for inv in invitations:
+            owner_name = f"@{inv['owner_username']}" if inv['owner_username'] else inv['owner_first_name']
+            invitations_text += f"*ID {inv['id']}:* {inv['business_name']}\n"
+            invitations_text += f"  От: {owner_name}\n\n"
         
+        invitations_text += "\n💡 Пожалуйста, укажите ID приглашения, которое хотите принять:"
+        
+        await update.message.reply_text(invitations_text, parse_mode='Markdown')
+        return ACCEPT_INVITATION_ID
+        
+    except Exception as e:
+        logger.error(f"Error in accept_invitation_start for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+        return ConversationHandler.END
+
+
+async def accept_invitation_id_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle invitation ID input for accept"""
+    try:
+        invitation_id = int(update.message.text.strip())
+        context.user_data['invitation_id'] = invitation_id
+        return await accept_invitation_process(update, context)
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Неверный формат ID. Пожалуйста, введите число.",
+            parse_mode='Markdown'
+        )
+        return ACCEPT_INVITATION_ID
+
+
+async def accept_invitation_process(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Process the invitation acceptance"""
+    user_id = update.effective_user.id
+    invitation_id = context.user_data.get('invitation_id')
+    
+    try:
         # Accept invitation
         success = user_manager.respond_to_invitation(invitation_id, accept=True)
         
@@ -1088,33 +1223,75 @@ async def accept_invitation_command(update: Update, context: ContextTypes.DEFAUL
         logger.info(f"User {user_id} accepted invitation {invitation_id}: {success}")
         
     except Exception as e:
-        logger.error(f"Error in accept invitation command for user {user_id}: {e}")
+        logger.error(f"Error in accept_invitation_process for user {user_id}: {e}")
         await update.message.reply_text(MESSAGES['database_error'])
+    
+    finally:
+        context.user_data.clear()
+    
+    return ConversationHandler.END
 
 
-async def reject_invitation_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle the /reject command to reject an invitation"""
+async def accept_invitation_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancel accept invitation conversation"""
+    await update.message.reply_text("❌ Принятие приглашения отменено")
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
+async def reject_invitation_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Start the reject invitation conversation"""
     user_id = update.effective_user.id
     
     try:
-        # Get invitation ID from command arguments
-        if not context.args or len(context.args) == 0:
+        # Get pending invitations to show user
+        invitations = user_manager.get_pending_invitations(user_id)
+        
+        if not invitations:
             await update.message.reply_text(
-                "⚠️ Укажите ID приглашения:\n`/reject <id>`\n\n"
-                "Используйте `/invitations` чтобы посмотреть список приглашений.",
+                MESSAGES['invitations_empty'],
                 parse_mode='Markdown'
             )
-            return
+            return ConversationHandler.END
         
-        try:
-            invitation_id = int(context.args[0])
-        except ValueError:
-            await update.message.reply_text(
-                "❌ Неверный формат ID. Используйте число.",
-                parse_mode='Markdown'
-            )
-            return
+        # Format invitations list
+        invitations_text = "📬 *Ваши приглашения:*\n\n"
+        for inv in invitations:
+            owner_name = f"@{inv['owner_username']}" if inv['owner_username'] else inv['owner_first_name']
+            invitations_text += f"*ID {inv['id']}:* {inv['business_name']}\n"
+            invitations_text += f"  От: {owner_name}\n\n"
         
+        invitations_text += "\n💡 Пожалуйста, укажите ID приглашения, которое хотите отклонить:"
+        
+        await update.message.reply_text(invitations_text, parse_mode='Markdown')
+        return REJECT_INVITATION_ID
+        
+    except Exception as e:
+        logger.error(f"Error in reject_invitation_start for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+        return ConversationHandler.END
+
+
+async def reject_invitation_id_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle invitation ID input for reject"""
+    try:
+        invitation_id = int(update.message.text.strip())
+        context.user_data['invitation_id'] = invitation_id
+        return await reject_invitation_process(update, context)
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Неверный формат ID. Пожалуйста, введите число.",
+            parse_mode='Markdown'
+        )
+        return REJECT_INVITATION_ID
+
+
+async def reject_invitation_process(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Process the invitation rejection"""
+    user_id = update.effective_user.id
+    invitation_id = context.user_data.get('invitation_id')
+    
+    try:
         # Reject invitation
         success = user_manager.respond_to_invitation(invitation_id, accept=False)
         
@@ -1132,8 +1309,20 @@ async def reject_invitation_command(update: Update, context: ContextTypes.DEFAUL
         logger.info(f"User {user_id} rejected invitation {invitation_id}: {success}")
         
     except Exception as e:
-        logger.error(f"Error in reject invitation command for user {user_id}: {e}")
+        logger.error(f"Error in reject_invitation_process for user {user_id}: {e}")
         await update.message.reply_text(MESSAGES['database_error'])
+    
+    finally:
+        context.user_data.clear()
+    
+    return ConversationHandler.END
+
+
+async def reject_invitation_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancel reject invitation conversation"""
+    await update.message.reply_text("❌ Отклонение приглашения отменено")
+    context.user_data.clear()
+    return ConversationHandler.END
 
 
 async def my_businesses_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1349,28 +1538,66 @@ async def my_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await update.message.reply_text(MESSAGES['database_error'])
 
 
-async def take_task_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle the /take_task command"""
+async def take_task_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Start the take task conversation"""
     user_id = update.effective_user.id
     
     try:
-        # Get task ID from command arguments
-        if not context.args or len(context.args) == 0:
+        # Get available tasks to show user
+        tasks = user_manager.get_available_tasks_for_employee(user_id)
+        
+        if not tasks:
             await update.message.reply_text(
-                "⚠️ Укажите ID задачи:\n`/take_task <id>`",
+                MESSAGES['available_tasks_empty'],
                 parse_mode='Markdown'
             )
-            return
+            return ConversationHandler.END
         
-        try:
-            task_id = int(context.args[0])
-        except ValueError:
-            await update.message.reply_text(
-                "❌ Неверный формат ID. Используйте число.",
-                parse_mode='Markdown'
-            )
-            return
+        # Format tasks list
+        tasks_text = "📋 *Доступные задачи:*\n\n"
+        for task in tasks:
+            tasks_text += f"*ID {task['id']}:* {task['title']}\n"
+            tasks_text += f"Бизнес: {task['business_name']}\n"
+            if task.get('description'):
+                desc = task['description'][:100]
+                if len(task['description']) > 100:
+                    desc += "..."
+                tasks_text += f"Описание: {desc}\n"
+            if task.get('ai_recommended_employee') == user_id:
+                tasks_text += "🤖 *AI рекомендует вас!*\n"
+            tasks_text += "\n"
         
+        tasks_text += "\n💡 Пожалуйста, укажите ID задачи, которую хотите взять:"
+        
+        await update.message.reply_text(tasks_text, parse_mode='Markdown')
+        return TAKE_TASK_ID
+        
+    except Exception as e:
+        logger.error(f"Error in take_task_start for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+        return ConversationHandler.END
+
+
+async def take_task_id_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle task ID input for take_task"""
+    try:
+        task_id = int(update.message.text.strip())
+        context.user_data['task_id'] = task_id
+        return await take_task_process(update, context)
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Неверный формат ID. Пожалуйста, введите число.",
+            parse_mode='Markdown'
+        )
+        return TAKE_TASK_ID
+
+
+async def take_task_process(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Process taking the task"""
+    user_id = update.effective_user.id
+    task_id = context.user_data.get('task_id')
+    
+    try:
         # Take task
         success, message = user_manager.take_task(user_id, task_id)
         
@@ -1385,35 +1612,82 @@ async def take_task_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         logger.info(f"User {user_id} tried to take task {task_id}: {success}")
         
     except Exception as e:
-        logger.error(f"Error in take_task command for user {user_id}: {e}")
+        logger.error(f"Error in take_task_process for user {user_id}: {e}")
         await update.message.reply_text(MESSAGES['database_error'])
+    
+    finally:
+        context.user_data.clear()
+    
+    return ConversationHandler.END
 
 
-async def assign_task_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle the /assign_task command"""
+async def take_task_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancel take task conversation"""
+    await update.message.reply_text("❌ Взятие задачи отменено")
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
+async def assign_task_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Start the assign task conversation"""
     user_id = update.effective_user.id
     
     try:
-        # Get task ID and employee username from command arguments
-        if not context.args or len(context.args) < 2:
+        # Check if user is business owner
+        if not user_manager.is_business_owner(user_id):
             await update.message.reply_text(
-                "⚠️ Укажите ID задачи и username сотрудника:\n`/assign_task <task_id> @username`",
+                MESSAGES['task_no_business'],
                 parse_mode='Markdown'
             )
-            return
+            return ConversationHandler.END
         
-        try:
-            task_id = int(context.args[0])
-        except ValueError:
-            await update.message.reply_text(
-                "❌ Неверный формат ID задачи. Используйте число.",
-                parse_mode='Markdown'
-            )
-            return
+        # Ask for task ID first
+        await update.message.reply_text(
+            "📋 Пожалуйста, укажите ID задачи, которую хотите назначить:",
+            parse_mode='Markdown'
+        )
+        return ASSIGN_TASK_ID
         
-        # Get username (remove @ if present)
-        employee_username = context.args[1].lstrip('@')
-        
+    except Exception as e:
+        logger.error(f"Error in assign_task_start for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+        return ConversationHandler.END
+
+
+async def assign_task_id_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle task ID input for assign_task"""
+    try:
+        task_id = int(update.message.text.strip())
+        context.user_data['task_id'] = task_id
+        # Ask for username
+        await update.message.reply_text(
+            "👤 Пожалуйста, укажите username сотрудника:\n\n"
+            "Например: `@username` или `username`",
+            parse_mode='Markdown'
+        )
+        return ASSIGN_TASK_USERNAME
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Неверный формат ID. Пожалуйста, введите число.",
+            parse_mode='Markdown'
+        )
+        return ASSIGN_TASK_ID
+
+
+async def assign_task_username_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle username input for assign_task"""
+    employee_username = update.message.text.lstrip('@').strip()
+    context.user_data['employee_username'] = employee_username
+    return await assign_task_process(update, context)
+
+
+async def assign_task_process(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Process assigning the task"""
+    user_id = update.effective_user.id
+    task_id = context.user_data.get('task_id')
+    employee_username = context.user_data.get('employee_username')
+    
+    try:
         # Assign task by username
         success, message, employee_id = user_manager.assign_task_to_employee_by_username(
             user_id, task_id, employee_username
@@ -1447,32 +1721,90 @@ async def assign_task_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         logger.info(f"User {user_id} tried to assign task {task_id} to @{employee_username}: {success}")
         
     except Exception as e:
-        logger.error(f"Error in assign_task command for user {user_id}: {e}")
+        logger.error(f"Error in assign_task_process for user {user_id}: {e}")
         await update.message.reply_text(MESSAGES['database_error'])
+    
+    finally:
+        context.user_data.clear()
+    
+    return ConversationHandler.END
 
 
-async def complete_task_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle the /complete_task command"""
+async def assign_task_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancel assign task conversation"""
+    await update.message.reply_text("❌ Назначение задачи отменено")
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
+async def complete_task_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Start the complete task conversation"""
     user_id = update.effective_user.id
     
     try:
-        # Get task ID from command arguments
-        if not context.args or len(context.args) == 0:
+        # Get user's tasks to show
+        tasks = user_manager.get_my_tasks(user_id)
+        
+        if not tasks:
             await update.message.reply_text(
-                "⚠️ Укажите ID задачи:\n`/complete_task <id>`",
+                MESSAGES['my_tasks_empty'],
                 parse_mode='Markdown'
             )
-            return
+            return ConversationHandler.END
         
-        try:
-            task_id = int(context.args[0])
-        except ValueError:
+        # Filter only in_progress tasks
+        in_progress_tasks = [t for t in tasks if t['status'] in ('assigned', 'in_progress')]
+        
+        if not in_progress_tasks:
             await update.message.reply_text(
-                "❌ Неверный формат ID. Используйте число.",
+                "У вас нет задач в работе для завершения.",
                 parse_mode='Markdown'
             )
-            return
+            return ConversationHandler.END
         
+        # Format tasks list
+        tasks_text = "📋 *Ваши задачи в работе:*\n\n"
+        for task in in_progress_tasks:
+            tasks_text += f"*ID {task['id']}:* {task['title']}\n"
+            tasks_text += f"Бизнес: {task['business_name']}\n"
+            if task.get('description'):
+                desc = task['description'][:100]
+                if len(task['description']) > 100:
+                    desc += "..."
+                tasks_text += f"Описание: {desc}\n"
+            tasks_text += "\n"
+        
+        tasks_text += "\n💡 Пожалуйста, укажите ID задачи, которую хотите завершить:"
+        
+        await update.message.reply_text(tasks_text, parse_mode='Markdown')
+        return COMPLETE_TASK_ID
+        
+    except Exception as e:
+        logger.error(f"Error in complete_task_start for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+        return ConversationHandler.END
+
+
+async def complete_task_id_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle task ID input for complete_task"""
+    try:
+        task_id = int(update.message.text.strip())
+        context.user_data['task_id'] = task_id
+        return await complete_task_process(update, context)
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Неверный формат ID. Пожалуйста, введите число.",
+            parse_mode='Markdown'
+        )
+        return COMPLETE_TASK_ID
+
+
+async def complete_task_process(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Process completing the task"""
+    user_id = update.effective_user.id
+    task_id = context.user_data.get('task_id')
+    
+    try:
         # Complete task
         success, message = user_manager.complete_task(user_id, task_id)
         
@@ -1487,8 +1819,20 @@ async def complete_task_command(update: Update, context: ContextTypes.DEFAULT_TY
         logger.info(f"User {user_id} tried to complete task {task_id}: {success}")
         
     except Exception as e:
-        logger.error(f"Error in complete_task command for user {user_id}: {e}")
+        logger.error(f"Error in complete_task_process for user {user_id}: {e}")
         await update.message.reply_text(MESSAGES['database_error'])
+    
+    finally:
+        context.user_data.clear()
+    
+    return ConversationHandler.END
+
+
+async def complete_task_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancel complete task conversation"""
+    await update.message.reply_text("❌ Завершение задачи отменено")
+    context.user_data.clear()
+    return ConversationHandler.END
 
 
 async def all_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1710,21 +2054,89 @@ def main() -> None:
         application.add_handler(CommandHandler("help", help_command))
         application.add_handler(CommandHandler("find_similar", find_similar_command))
         
+        # Register callback query handler for inline buttons
+        application.add_handler(CallbackQueryHandler(invitation_callback_handler))
+        
         # Register employee management command handlers
-        application.add_handler(CommandHandler("add_employee", add_employee_command))
         application.add_handler(CommandHandler("employees", employees_command))
         application.add_handler(CommandHandler("invitations", invitations_command))
-        application.add_handler(CommandHandler("accept", accept_invitation_command))
-        application.add_handler(CommandHandler("reject", reject_invitation_command))
         application.add_handler(CommandHandler("my_businesses", my_businesses_command))
+        
+        # Register employee management conversation handlers
+        add_employee_handler = ConversationHandler(
+            entry_points=[CommandHandler("add_employee", add_employee_start)],
+            states={
+                ADD_EMPLOYEE_USERNAME: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, add_employee_username_handler)
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", add_employee_cancel)],
+        )
+        application.add_handler(add_employee_handler)
+        
+        accept_invitation_handler = ConversationHandler(
+            entry_points=[CommandHandler("accept", accept_invitation_start)],
+            states={
+                ACCEPT_INVITATION_ID: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, accept_invitation_id_handler)
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", accept_invitation_cancel)],
+        )
+        application.add_handler(accept_invitation_handler)
+        
+        reject_invitation_handler = ConversationHandler(
+            entry_points=[CommandHandler("reject", reject_invitation_start)],
+            states={
+                REJECT_INVITATION_ID: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, reject_invitation_id_handler)
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", reject_invitation_cancel)],
+        )
+        application.add_handler(reject_invitation_handler)
         
         # Register task management command handlers
         application.add_handler(CommandHandler("available_tasks", available_tasks_command))
         application.add_handler(CommandHandler("my_tasks", my_tasks_command))
-        application.add_handler(CommandHandler("take_task", take_task_command))
-        application.add_handler(CommandHandler("assign_task", assign_task_command))
-        application.add_handler(CommandHandler("complete_task", complete_task_command))
         application.add_handler(CommandHandler("all_tasks", all_tasks_command))
+        
+        # Register task management conversation handlers
+        take_task_handler = ConversationHandler(
+            entry_points=[CommandHandler("take_task", take_task_start)],
+            states={
+                TAKE_TASK_ID: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, take_task_id_handler)
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", take_task_cancel)],
+        )
+        application.add_handler(take_task_handler)
+        
+        assign_task_handler = ConversationHandler(
+            entry_points=[CommandHandler("assign_task", assign_task_start)],
+            states={
+                ASSIGN_TASK_ID: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, assign_task_id_handler)
+                ],
+                ASSIGN_TASK_USERNAME: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, assign_task_username_handler)
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", assign_task_cancel)],
+        )
+        application.add_handler(assign_task_handler)
+        
+        complete_task_handler = ConversationHandler(
+            entry_points=[CommandHandler("complete_task", complete_task_start)],
+            states={
+                COMPLETE_TASK_ID: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, complete_task_id_handler)
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", complete_task_cancel)],
+        )
+        application.add_handler(complete_task_handler)
         
         # Register create task conversation handler
         create_task_handler = ConversationHandler(
