@@ -31,13 +31,19 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Finance conversation states
-CHECKING_EXISTING, QUESTION_1, QUESTION_2, QUESTION_3 = range(4)
+CHECKING_EXISTING, QUESTION_1, QUESTION_2, QUESTION_3, QUESTION_4 = range(5)
 
 # Clients search conversation states
-CLIENTS_CHECKING, CLIENTS_QUESTION = range(4, 6)
+CLIENTS_CHECKING, CLIENTS_QUESTION = range(5, 7)
 
 # Executors search conversation states
-EXECUTORS_CHECKING, EXECUTORS_QUESTION = range(6, 8)
+EXECUTORS_CHECKING, EXECUTORS_QUESTION = range(7, 9)
+
+# Invitation response states
+INVITATION_RESPONSE = range(9, 10)
+
+# Task creation states
+TASK_DESCRIPTION = range(10, 11)
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -258,51 +264,55 @@ async def finance_check_existing(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def finance_question_1(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handle answer to question 1 and ask question 2"""
+    """Handle answer to question 1 (business name) and ask question 2"""
+    user_id = update.effective_user.id
+    
+    # Save answer to context
+    context.user_data['business_name'] = update.message.text
+    
+    # Ask question 2
+    await update.message.reply_text(
+        MESSAGES['finance_question_2'],
+        parse_mode='Markdown'
+    )
+    logger.info(f"User {user_id} answered question 1 (business name)")
+    return QUESTION_2
+
+
+async def finance_question_2(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle answer to question 2 (business type) and ask question 3"""
     user_id = update.effective_user.id
     
     # Save answer to context
     context.user_data['business_type'] = update.message.text
     
-    # Ask question 2, contextualizing it with answer from question 1
-    business_type = update.message.text
-    custom_q2 = (
-        f"💰 *Вопрос 2/3*\n\n"
-        f"Отлично! Теперь расскажите о финансовой ситуации вашего бизнеса ({business_type[:50]}...):\n"
-        f"- Каковы ваши основные источники дохода?\n"
-        f"- Примерный месячный оборот?\n"
-        f"- Основные статьи расходов?"
+    # Ask question 3
+    await update.message.reply_text(
+        MESSAGES['finance_question_3'],
+        parse_mode='Markdown'
     )
-    
-    await update.message.reply_text(custom_q2, parse_mode='Markdown')
-    logger.info(f"User {user_id} answered question 1")
-    return QUESTION_2
+    logger.info(f"User {user_id} answered question 2 (business type)")
+    return QUESTION_3
 
 
-async def finance_question_2(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handle answer to question 2 and ask question 3"""
+async def finance_question_3(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle answer to question 3 (financial situation) and ask question 4"""
     user_id = update.effective_user.id
     
     # Save answer to context
     context.user_data['financial_situation'] = update.message.text
     
-    # Ask question 3, contextualizing it with previous answers
-    financial_sit = update.message.text
-    custom_q3 = (
-        f"🎯 *Вопрос 3/3*\n\n"
-        f"Понятно. Последний вопрос о ваших целях:\n"
-        f"- Какие финансовые цели вы хотите достичь?\n"
-        f"- В какой срок?\n"
-        f"- Какие проблемы/вызовы вы видите на пути к этим целям?"
+    # Ask question 4
+    await update.message.reply_text(
+        MESSAGES['finance_question_4'],
+        parse_mode='Markdown'
     )
-    
-    await update.message.reply_text(custom_q3, parse_mode='Markdown')
-    logger.info(f"User {user_id} answered question 2")
-    return QUESTION_3
+    logger.info(f"User {user_id} answered question 3 (financial situation)")
+    return QUESTION_4
 
 
-async def finance_question_3(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handle answer to question 3 and generate financial plan"""
+async def finance_question_4(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle answer to question 4 (goals) and generate financial plan"""
     user_id = update.effective_user.id
     
     # Save answer to context
@@ -314,6 +324,7 @@ async def finance_question_3(update: Update, context: ContextTypes.DEFAULT_TYPE)
     try:
         success = user_manager.save_business_info(
             user_id=user_id,
+            business_name=context.user_data['business_name'],
             business_type=context.user_data['business_type'],
             financial_situation=context.user_data['financial_situation'],
             goals=context.user_data['goals']
@@ -363,6 +374,7 @@ async def finance_generate_plan(update: Update, context: ContextTypes.DEFAULT_TY
             business_info = user_manager.get_business_info(user_id)
         else:
             business_info = {
+                'business_name': context.user_data['business_name'],
                 'business_type': context.user_data['business_type'],
                 'financial_situation': context.user_data['financial_situation'],
                 'goals': context.user_data['goals']
@@ -885,6 +897,657 @@ async def executors_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     return ConversationHandler.END
 
 
+# Employee management command handlers
+async def add_employee_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle the /add_employee command to invite an employee"""
+    user_id = update.effective_user.id
+    
+    try:
+        # Check if user has a business
+        if not user_manager.is_business_owner(user_id):
+            await update.message.reply_text(
+                MESSAGES['employee_no_business'],
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Get target username from command arguments
+        if not context.args or len(context.args) == 0:
+            await update.message.reply_text(
+                "⚠️ Укажите username пользователя:\n`/add_employee @username`",
+                parse_mode='Markdown'
+            )
+            return
+        
+        target_username = context.args[0].lstrip('@')
+        
+        # Invite employee
+        success, message = user_manager.invite_employee(user_id, target_username)
+        
+        if success:
+            await update.message.reply_text(
+                MESSAGES['employee_invited'].format(message=message),
+                parse_mode='Markdown'
+            )
+            
+            # Notify the invited user
+            target_user_id = user_manager.get_user_by_username(target_username)
+            if target_user_id:
+                try:
+                    business = user_manager.get_business(user_id)
+                    await context.bot.send_message(
+                        chat_id=target_user_id,
+                        text=f"🎉 *Новое приглашение!*\n\n"
+                             f"Вас пригласили стать сотрудником бизнеса *{business['business_name']}*\n\n"
+                             f"Используйте `/invitations` чтобы посмотреть приглашения и принять/отклонить их.",
+                        parse_mode='Markdown'
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to notify user {target_user_id}: {e}")
+        else:
+            await update.message.reply_text(
+                MESSAGES['employee_invite_error'].format(message=message),
+                parse_mode='Markdown'
+            )
+        
+        logger.info(f"User {user_id} invited {target_username}: {success}")
+        
+    except Exception as e:
+        logger.error(f"Error in add_employee command for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+
+
+async def employees_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle the /employees command to list business employees"""
+    user_id = update.effective_user.id
+    
+    try:
+        # Check if user has a business
+        business = user_manager.get_business(user_id)
+        if not business:
+            await update.message.reply_text(
+                MESSAGES['employee_no_business'],
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Get all employees
+        all_employees = user_manager.get_all_employees(business['id'])
+        
+        if not all_employees:
+            await update.message.reply_text(
+                MESSAGES['employees_empty'].format(business_name=business['business_name']),
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Format employee list
+        employees_text = ""
+        accepted = [e for e in all_employees if e['status'] == 'accepted']
+        pending = [e for e in all_employees if e['status'] == 'pending']
+        
+        if accepted:
+            employees_text += "*✅ Принятые:*\n"
+            for emp in accepted:
+                username = f"@{emp['username']}" if emp['username'] else emp['first_name']
+                employees_text += f"  • {username}\n"
+            employees_text += "\n"
+        
+        if pending:
+            employees_text += "*⏳ Ожидают ответа:*\n"
+            for emp in pending:
+                username = f"@{emp['username']}" if emp['username'] else emp['first_name']
+                employees_text += f"  • {username}\n"
+        
+        await update.message.reply_text(
+            MESSAGES['employees_list'].format(
+                business_name=business['business_name'],
+                employees=employees_text
+            ),
+            parse_mode='Markdown'
+        )
+        
+        logger.info(f"User {user_id} viewed employees list")
+        
+    except Exception as e:
+        logger.error(f"Error in employees command for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+
+
+async def invitations_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle the /invitations command to view pending invitations"""
+    user_id = update.effective_user.id
+    
+    try:
+        # Get pending invitations
+        invitations = user_manager.get_pending_invitations(user_id)
+        
+        if not invitations:
+            await update.message.reply_text(
+                MESSAGES['invitations_empty'],
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Format invitations list
+        invitations_text = ""
+        for inv in invitations:
+            owner_name = f"@{inv['owner_username']}" if inv['owner_username'] else inv['owner_first_name']
+            invitations_text += f"*ID {inv['id']}:* {inv['business_name']}\n"
+            invitations_text += f"  От: {owner_name}\n\n"
+        
+        await update.message.reply_text(
+            MESSAGES['invitations_list'].format(invitations=invitations_text),
+            parse_mode='Markdown'
+        )
+        
+        logger.info(f"User {user_id} viewed invitations")
+        
+    except Exception as e:
+        logger.error(f"Error in invitations command for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+
+
+async def accept_invitation_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle the /accept command to accept an invitation"""
+    user_id = update.effective_user.id
+    
+    try:
+        # Get invitation ID from command arguments
+        if not context.args or len(context.args) == 0:
+            await update.message.reply_text(
+                "⚠️ Укажите ID приглашения:\n`/accept <id>`\n\n"
+                "Используйте `/invitations` чтобы посмотреть список приглашений.",
+                parse_mode='Markdown'
+            )
+            return
+        
+        try:
+            invitation_id = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text(
+                "❌ Неверный формат ID. Используйте число.",
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Accept invitation
+        success = user_manager.respond_to_invitation(invitation_id, accept=True)
+        
+        if success:
+            await update.message.reply_text(
+                MESSAGES['invitation_accepted'],
+                parse_mode='Markdown'
+            )
+        else:
+            await update.message.reply_text(
+                MESSAGES['invitation_not_found'],
+                parse_mode='Markdown'
+            )
+        
+        logger.info(f"User {user_id} accepted invitation {invitation_id}: {success}")
+        
+    except Exception as e:
+        logger.error(f"Error in accept invitation command for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+
+
+async def reject_invitation_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle the /reject command to reject an invitation"""
+    user_id = update.effective_user.id
+    
+    try:
+        # Get invitation ID from command arguments
+        if not context.args or len(context.args) == 0:
+            await update.message.reply_text(
+                "⚠️ Укажите ID приглашения:\n`/reject <id>`\n\n"
+                "Используйте `/invitations` чтобы посмотреть список приглашений.",
+                parse_mode='Markdown'
+            )
+            return
+        
+        try:
+            invitation_id = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text(
+                "❌ Неверный формат ID. Используйте число.",
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Reject invitation
+        success = user_manager.respond_to_invitation(invitation_id, accept=False)
+        
+        if success:
+            await update.message.reply_text(
+                MESSAGES['invitation_rejected'],
+                parse_mode='Markdown'
+            )
+        else:
+            await update.message.reply_text(
+                MESSAGES['invitation_not_found'],
+                parse_mode='Markdown'
+            )
+        
+        logger.info(f"User {user_id} rejected invitation {invitation_id}: {success}")
+        
+    except Exception as e:
+        logger.error(f"Error in reject invitation command for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+
+
+async def my_businesses_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle the /my_businesses command to view businesses where user is an employee"""
+    user_id = update.effective_user.id
+    
+    try:
+        # Get businesses where user is an employee
+        businesses = user_manager.get_user_businesses(user_id)
+        
+        if not businesses:
+            await update.message.reply_text(
+                MESSAGES['my_businesses_empty'],
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Format businesses list
+        businesses_text = ""
+        for biz in businesses:
+            owner_name = f"@{biz['owner_username']}" if biz['owner_username'] else biz['owner_first_name']
+            businesses_text += f"• *{biz['business_name']}*\n"
+            businesses_text += f"  Владелец: {owner_name}\n\n"
+        
+        await update.message.reply_text(
+            MESSAGES['my_businesses_list'].format(businesses=businesses_text),
+            parse_mode='Markdown'
+        )
+        
+        logger.info(f"User {user_id} viewed their businesses")
+        
+    except Exception as e:
+        logger.error(f"Error in my_businesses command for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+
+
+# Task management command handlers
+async def create_task_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle the /create_task command"""
+    user_id = update.effective_user.id
+    
+    try:
+        # Check if user is business owner
+        if not user_manager.is_business_owner(user_id):
+            await update.message.reply_text(
+                MESSAGES['task_no_business'],
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
+        
+        await update.message.reply_text(
+            MESSAGES['task_create_start'],
+            parse_mode='Markdown'
+        )
+        return TASK_DESCRIPTION
+        
+    except Exception as e:
+        logger.error(f"Error in create_task command for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+        return ConversationHandler.END
+
+
+async def task_description_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle task description input"""
+    user_id = update.effective_user.id
+    text = update.message.text
+    
+    # Parse title and description
+    if '---' not in text:
+        await update.message.reply_text(
+            MESSAGES['task_invalid_format'],
+            parse_mode='Markdown'
+        )
+        return TASK_DESCRIPTION
+    
+    parts = text.split('---', 1)
+    title = parts[0].strip()
+    description = parts[1].strip()
+    
+    if not title or not description:
+        await update.message.reply_text(
+            MESSAGES['task_invalid_format'],
+            parse_mode='Markdown'
+        )
+        return TASK_DESCRIPTION
+    
+    # Show thinking message
+    thinking_msg = await update.message.reply_text("🤔 Создаю задачу и анализирую сотрудников...")
+    
+    try:
+        # Create task with AI recommendation
+        success, message, result = user_manager.create_task_with_ai_recommendation(
+            user_id, title, description
+        )
+        
+        if not success:
+            await thinking_msg.edit_text(f"❌ {message}")
+            return ConversationHandler.END
+        
+        task = result['task']
+        ai_recommendation = result.get('ai_recommendation')
+        
+        # Format response
+        if ai_recommendation:
+            ai_text = MESSAGES['task_ai_recommendation'].format(
+                username=ai_recommendation['username'],
+                reasoning=ai_recommendation['reasoning'],
+                task_id=task['id']
+            )
+            response_text = MESSAGES['task_created'].format(
+                title=title,
+                task_id=task['id'],
+                ai_recommendation=ai_text
+            )
+        else:
+            response_text = MESSAGES['task_created_no_ai'].format(
+                title=title,
+                task_id=task['id']
+            )
+        
+        await thinking_msg.edit_text(response_text, parse_mode='Markdown')
+        logger.info(f"Task {task['id']} created by user {user_id}")
+        
+    except Exception as e:
+        logger.error(f"Error creating task for user {user_id}: {e}")
+        await thinking_msg.edit_text(MESSAGES['database_error'])
+    
+    return ConversationHandler.END
+
+
+async def task_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancel task creation"""
+    await update.message.reply_text("❌ Создание задачи отменено")
+    return ConversationHandler.END
+
+
+async def available_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle the /available_tasks command"""
+    user_id = update.effective_user.id
+    
+    try:
+        # Get available tasks
+        tasks = user_manager.get_available_tasks_for_employee(user_id)
+        
+        if not tasks:
+            await update.message.reply_text(
+                MESSAGES['available_tasks_empty'],
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Format tasks list
+        tasks_text = ""
+        for task in tasks:
+            tasks_text += f"*ID {task['id']}:* {task['title']}\n"
+            tasks_text += f"Бизнес: {task['business_name']}\n"
+            if task.get('description'):
+                desc = task['description'][:100]
+                if len(task['description']) > 100:
+                    desc += "..."
+                tasks_text += f"Описание: {desc}\n"
+            if task.get('ai_recommended_employee') == user_id:
+                tasks_text += "🤖 *AI рекомендует вас!*\n"
+            tasks_text += "\n"
+        
+        await update.message.reply_text(
+            MESSAGES['available_tasks'].format(tasks=tasks_text),
+            parse_mode='Markdown'
+        )
+        logger.info(f"User {user_id} viewed available tasks")
+        
+    except Exception as e:
+        logger.error(f"Error in available_tasks command for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+
+
+async def my_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle the /my_tasks command"""
+    user_id = update.effective_user.id
+    
+    try:
+        # Get user's tasks
+        tasks = user_manager.get_my_tasks(user_id)
+        
+        if not tasks:
+            await update.message.reply_text(
+                MESSAGES['my_tasks_empty'],
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Format tasks list
+        tasks_text = ""
+        for task in tasks:
+            tasks_text += f"*ID {task['id']}:* {task['title']}\n"
+            tasks_text += f"Бизнес: {task['business_name']}\n"
+            tasks_text += f"Статус: {task['status']}\n"
+            if task.get('description'):
+                desc = task['description'][:100]
+                if len(task['description']) > 100:
+                    desc += "..."
+                tasks_text += f"Описание: {desc}\n"
+            tasks_text += "\n"
+        
+        await update.message.reply_text(
+            MESSAGES['my_tasks'].format(tasks=tasks_text),
+            parse_mode='Markdown'
+        )
+        logger.info(f"User {user_id} viewed their tasks")
+        
+    except Exception as e:
+        logger.error(f"Error in my_tasks command for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+
+
+async def take_task_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle the /take_task command"""
+    user_id = update.effective_user.id
+    
+    try:
+        # Get task ID from command arguments
+        if not context.args or len(context.args) == 0:
+            await update.message.reply_text(
+                "⚠️ Укажите ID задачи:\n`/take_task <id>`",
+                parse_mode='Markdown'
+            )
+            return
+        
+        try:
+            task_id = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text(
+                "❌ Неверный формат ID. Используйте число.",
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Take task
+        success, message = user_manager.take_task(user_id, task_id)
+        
+        if success:
+            await update.message.reply_text(
+                MESSAGES['task_taken'],
+                parse_mode='Markdown'
+            )
+        else:
+            await update.message.reply_text(f"❌ {message}", parse_mode='Markdown')
+        
+        logger.info(f"User {user_id} tried to take task {task_id}: {success}")
+        
+    except Exception as e:
+        logger.error(f"Error in take_task command for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+
+
+async def assign_task_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle the /assign_task command"""
+    user_id = update.effective_user.id
+    
+    try:
+        # Get task ID and employee username from command arguments
+        if not context.args or len(context.args) < 2:
+            await update.message.reply_text(
+                "⚠️ Укажите ID задачи и username сотрудника:\n`/assign_task <task_id> @username`",
+                parse_mode='Markdown'
+            )
+            return
+        
+        try:
+            task_id = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text(
+                "❌ Неверный формат ID задачи. Используйте число.",
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Get username (remove @ if present)
+        employee_username = context.args[1].lstrip('@')
+        
+        # Assign task by username
+        success, message, employee_id = user_manager.assign_task_to_employee_by_username(
+            user_id, task_id, employee_username
+        )
+        
+        if success:
+            await update.message.reply_text(
+                MESSAGES['task_assigned'],
+                parse_mode='Markdown'
+            )
+            
+            # Notify employee
+            if employee_id:
+                try:
+                    from database import business_repo
+                    task = business_repo.get_task(task_id)
+                    if task:
+                        await context.bot.send_message(
+                            chat_id=employee_id,
+                            text=f"📋 *Новая задача назначена вам!*\n\n"
+                                 f"*{task['title']}*\n"
+                                 f"{task['description']}\n\n"
+                                 f"Посмотреть свои задачи: `/my_tasks`",
+                            parse_mode='Markdown'
+                        )
+                except Exception as e:
+                    logger.warning(f"Failed to notify employee {employee_id}: {e}")
+        else:
+            await update.message.reply_text(f"❌ {message}", parse_mode='Markdown')
+        
+        logger.info(f"User {user_id} tried to assign task {task_id} to @{employee_username}: {success}")
+        
+    except Exception as e:
+        logger.error(f"Error in assign_task command for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+
+
+async def complete_task_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle the /complete_task command"""
+    user_id = update.effective_user.id
+    
+    try:
+        # Get task ID from command arguments
+        if not context.args or len(context.args) == 0:
+            await update.message.reply_text(
+                "⚠️ Укажите ID задачи:\n`/complete_task <id>`",
+                parse_mode='Markdown'
+            )
+            return
+        
+        try:
+            task_id = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text(
+                "❌ Неверный формат ID. Используйте число.",
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Complete task
+        success, message = user_manager.complete_task(user_id, task_id)
+        
+        if success:
+            await update.message.reply_text(
+                MESSAGES['task_completed'],
+                parse_mode='Markdown'
+            )
+        else:
+            await update.message.reply_text(f"❌ {message}", parse_mode='Markdown')
+        
+        logger.info(f"User {user_id} tried to complete task {task_id}: {success}")
+        
+    except Exception as e:
+        logger.error(f"Error in complete_task command for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+
+
+async def all_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle the /all_tasks command"""
+    user_id = update.effective_user.id
+    
+    try:
+        # Check if user is business owner
+        if not user_manager.is_business_owner(user_id):
+            await update.message.reply_text(
+                MESSAGES['task_no_business'],
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Get all business tasks
+        tasks = user_manager.get_business_all_tasks(user_id)
+        
+        if not tasks:
+            await update.message.reply_text(
+                MESSAGES['business_tasks_empty'],
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Group tasks by status
+        available = [t for t in tasks if t['status'] == 'available']
+        assigned = [t for t in tasks if t['status'] in ('assigned', 'in_progress')]
+        completed = [t for t in tasks if t['status'] == 'completed']
+        
+        tasks_text = ""
+        
+        if available:
+            tasks_text += "*📋 Доступные задачи:*\n"
+            for task in available:
+                tasks_text += f"  • ID {task['id']}: {task['title']}\n"
+            tasks_text += "\n"
+        
+        if assigned:
+            tasks_text += "*👤 Назначенные задачи:*\n"
+            for task in assigned:
+                assignee = f"@{task['assigned_to_username']}" if task.get('assigned_to_username') else task.get('assigned_to_name', 'Unknown')
+                tasks_text += f"  • ID {task['id']}: {task['title']} → {assignee}\n"
+            tasks_text += "\n"
+        
+        if completed:
+            tasks_text += f"*✅ Выполнено задач: {len(completed)}*\n"
+        
+        await update.message.reply_text(
+            MESSAGES['business_tasks'].format(tasks=tasks_text),
+            parse_mode='Markdown'
+        )
+        logger.info(f"User {user_id} viewed all business tasks")
+        
+    except Exception as e:
+        logger.error(f"Error in all_tasks command for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+
+
 # Find similar users command handler
 async def find_similar_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the /find_similar command to find similar users for collaboration"""
@@ -949,10 +1612,16 @@ async def find_similar_command(update: Update, context: ContextTypes.DEFAULT_TYP
             for user_data in other_users:
                 try:
                     import json
+                    business_info = {
+                        'business_name': user_data.get('business_name'),
+                        'business_type': user_data.get('business_type'),
+                        'financial_situation': user_data.get('financial_situation'),
+                        'goals': user_data.get('goals')
+                    }
                     parsed_user = {
                         'user_id': user_data['user_id'],
                         'username': user_data.get('username'),
-                        'business_info': json.loads(user_data['business_info']) if user_data.get('business_info') else {},
+                        'business_info': business_info,
                         'workers_info': json.loads(user_data['workers_info']) if user_data.get('workers_info') else {},
                         'executors_info': json.loads(user_data['executors_info']) if user_data.get('executors_info') else {}
                     }
@@ -1041,6 +1710,34 @@ def main() -> None:
         application.add_handler(CommandHandler("help", help_command))
         application.add_handler(CommandHandler("find_similar", find_similar_command))
         
+        # Register employee management command handlers
+        application.add_handler(CommandHandler("add_employee", add_employee_command))
+        application.add_handler(CommandHandler("employees", employees_command))
+        application.add_handler(CommandHandler("invitations", invitations_command))
+        application.add_handler(CommandHandler("accept", accept_invitation_command))
+        application.add_handler(CommandHandler("reject", reject_invitation_command))
+        application.add_handler(CommandHandler("my_businesses", my_businesses_command))
+        
+        # Register task management command handlers
+        application.add_handler(CommandHandler("available_tasks", available_tasks_command))
+        application.add_handler(CommandHandler("my_tasks", my_tasks_command))
+        application.add_handler(CommandHandler("take_task", take_task_command))
+        application.add_handler(CommandHandler("assign_task", assign_task_command))
+        application.add_handler(CommandHandler("complete_task", complete_task_command))
+        application.add_handler(CommandHandler("all_tasks", all_tasks_command))
+        
+        # Register create task conversation handler
+        create_task_handler = ConversationHandler(
+            entry_points=[CommandHandler("create_task", create_task_command)],
+            states={
+                TASK_DESCRIPTION: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, task_description_handler)
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", task_cancel)],
+        )
+        application.add_handler(create_task_handler)
+        
         # Register finance conversation handler
         finance_handler = ConversationHandler(
             entry_points=[CommandHandler("finance", finance_start)],
@@ -1056,6 +1753,9 @@ def main() -> None:
                 ],
                 QUESTION_3: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, finance_question_3)
+                ],
+                QUESTION_4: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, finance_question_4)
                 ],
             },
             fallbacks=[CommandHandler("cancel", finance_cancel)],

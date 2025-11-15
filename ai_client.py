@@ -370,6 +370,121 @@ Executors Info: {user.get('executors_info', 'Не указано')}
         return self.generate_response(user_prompt, system_prompt)
 
 
+    def recommend_employee_for_task(self, task_title: str, task_description: str, 
+                                   employees_history: dict) -> Optional[dict]:
+        """
+        Recommend best employee for a task based on their history
+        
+        Args:
+            task_title: Title of the new task
+            task_description: Description of the new task
+            employees_history: Dictionary with employee task history
+                {user_id: {'username': ..., 'completed_tasks': ..., 'task_titles': [...], 'task_descriptions': [...]}}
+        
+        Returns:
+            Dictionary with recommendation: {'user_id': int, 'username': str, 'reasoning': str}
+            or None if no employees available
+        """
+        if not employees_history:
+            return None
+        
+        # Prepare employees info for AI
+        employees_info = []
+        for user_id, history in employees_history.items():
+            username = history.get('username', 'Unknown')
+            first_name = history.get('first_name', '')
+            completed_count = history.get('completed_tasks', 0)
+            task_titles = history.get('task_titles', [])
+            task_hours = history.get('task_hours', [])
+            
+            # Filter out None values and limit to 5 recent tasks
+            recent_tasks = [t for t in task_titles if t][:5]
+            recent_hours = task_hours[:5] if task_hours else []
+            
+            employee_text = f"Сотрудник: @{username} ({first_name})\n"
+            employee_text += f"Выполнено задач: {completed_count}\n"
+            
+            if recent_tasks:
+                employee_text += "Последние задачи:\n"
+                for i, task in enumerate(recent_tasks):
+                    employee_text += f"  - {task}"
+                    # Add time if available
+                    if i < len(recent_hours) and recent_hours[i] is not None:
+                        hours = recent_hours[i]
+                        if hours < 1:
+                            minutes = int(hours * 60)
+                            employee_text += f" (выполнена за {minutes} мин)"
+                        elif hours < 24:
+                            employee_text += f" (выполнена за {hours:.1f} ч)"
+                        else:
+                            days = hours / 24
+                            employee_text += f" (выполнена за {days:.1f} дн)"
+                    employee_text += "\n"
+            else:
+                employee_text += "Еще не выполнял задачи\n"
+            
+            employees_info.append({
+                'user_id': user_id,
+                'username': username,
+                'text': employee_text
+            })
+        
+        # Prepare prompt for AI
+        prompt = f"""Новая задача:
+Название: {task_title}
+Описание: {task_description}
+
+Доступные сотрудники:
+{chr(10).join([emp['text'] for emp in employees_info])}
+
+Проанализируй опыт каждого сотрудника и порекомендуй ОДНОГО наиболее подходящего для этой задачи.
+Ответь ТОЛЬКО в формате:
+USERNAME: @username
+ПРИЧИНА: краткое объяснение почему именно этот сотрудник подходит лучше всего"""
+
+        try:
+            system_prompt = (
+                "Ты HR-менеджер с опытом в распределении задач. "
+                "Анализируй опыт сотрудников и рекомендуй лучшего кандидата на основе их истории выполненных задач. "
+                "Учитывай не только опыт, но и скорость выполнения похожих задач. "
+                "Предпочитай сотрудников, которые быстрее справляются с похожими задачами. "
+                "Отвечай СТРОГО в указанном формате на русском языке."
+            )
+            
+            response = self.generate_response(prompt, system_prompt)
+            
+            # Parse response
+            lines = response.strip().split('\n')
+            username = None
+            reasoning = None
+            
+            for line in lines:
+                if line.startswith('USERNAME:'):
+                    username = line.replace('USERNAME:', '').strip().lstrip('@')
+                elif line.startswith('ПРИЧИНА:'):
+                    reasoning = line.replace('ПРИЧИНА:', '').strip()
+            
+            if not username:
+                logger.warning("AI didn't provide username in recommendation")
+                return None
+            
+            # Find user_id by username
+            for emp in employees_info:
+                if emp['username'] == username:
+                    return {
+                        'user_id': emp['user_id'],
+                        'username': username,
+                        'reasoning': reasoning or "AI рекомендует этого сотрудника"
+                    }
+            
+            logger.warning(f"AI recommended unknown username: {username}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error getting AI recommendation: {e}")
+            return None
+
+
 # Global AI client instance
 ai_client = AIClient()
 
