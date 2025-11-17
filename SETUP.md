@@ -45,7 +45,7 @@ AI_MODEL=z-ai/glm-4.5-air:free
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=telegram_bot
-DB_USER=maslovartemij
+DB_USER=postgres
 DB_PASSWORD=postgres
 
 ```
@@ -55,13 +55,11 @@ DB_PASSWORD=postgres
 ```bash
 # Запустите PostgreSQL (если еще не запущен)
 sudo service postgresql start  # Linux/WSL
-# или brew services start postgresql  # macOS
+# или 
+brew services start postgresql  # macOS
 
 # Установите пароль для пользователя postgres (если не установлен)
 sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD 'postgres';"
-
-# Настройте аутентификацию для localhost (может потребоваться)
-sudo sed -i 's/local   all   all   peer/local   all   all   md5/g' /etc/postgresql/*/main/pg_hba.conf
 
 # Создать базу данных
 psql -U postgres
