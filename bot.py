@@ -3,6 +3,7 @@ Telegram bot with AI integration, user accounts, and token system
 """
 import os
 import logging
+import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, 
@@ -30,6 +31,33 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+
+def escape_markdown(text: str) -> str:
+    """
+    Escape special Markdown characters in user-generated content.
+    This prevents Markdown parsing errors when user input contains special characters.
+    
+    NOTE: This should ONLY be used for user input (usernames, business names, etc.),
+    NOT for AI-generated content which already has proper markdown formatting.
+    
+    Args:
+        text: The text to escape
+        
+    Returns:
+        Text with escaped Markdown special characters
+    """
+    if not text:
+        return text
+    
+    # Characters that need to be escaped in Telegram Markdown
+    # Note: () and . are excluded as they rarely cause issues and are common in text
+    special_chars = ['_', '*', '[', ']', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '!']
+    
+    for char in special_chars:
+        text = text.replace(char, '\\' + char)
+    
+    return text
 
 # Finance conversation states
 CHECKING_EXISTING, QUESTION_1, QUESTION_2, QUESTION_3, QUESTION_4 = range(5)
@@ -168,6 +196,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 ai_response = ai_response[:4000] + "\n\n... (ответ сокращен)"
             
             # Send response with Markdown formatting
+            # Note: AI responses are not escaped as they contain intentional markdown formatting
             try:
                 await thinking_msg.edit_text(f"💡 {ai_response}", parse_mode='Markdown')
             except BadRequest as e:
@@ -394,7 +423,7 @@ async def finance_generate_plan(update: Update, context: ContextTypes.DEFAULT_TY
             return ConversationHandler.END
         
         # Update status message
-        await thinking_msg.edit_text("🤖 Генерирую финансовый план с помощью AI...(это может занять некоторое время)")
+        await thinking_msg.edit_text("🤖 Генерирую финансовый план с помощью AI...(это может занять до 5 минут)")
         
         # Generate financial plan using AI
         financial_plan = ai_client.generate_financial_plan(business_info)
@@ -438,11 +467,13 @@ async def finance_generate_plan(update: Update, context: ContextTypes.DEFAULT_TY
                 
                 for i, chunk in enumerate(chunks):
                     header = f"💼 *Финансовый план (часть {i+1}/{len(chunks)})*\n\n" if len(chunks) > 1 else "💼 *Финансовый план*\n\n"
+                    # AI-generated content is not escaped as it contains intentional markdown
                     try:
                         await update.message.reply_text(header + chunk, parse_mode='Markdown')
                     except BadRequest:
                         await update.message.reply_text(header + chunk)
             else:
+                # AI-generated content is not escaped as it contains intentional markdown
                 try:
                     await thinking_msg.edit_text(
                         f"💼 *Финансовый план*\n\n{financial_plan}",
@@ -681,6 +712,7 @@ async def clients_search(update: Update, context: ContextTypes.DEFAULT_TYPE,
         logger.info(f"Clients search results generated for user {user_id}, length: {len(search_results)}")
         
         # Send results
+        # AI-generated content is not escaped as it contains intentional markdown
         try:
             await thinking_msg.edit_text(
                 f"👥 *Подходящие площадки для поиска клиентов:*\n\n{search_results}",
@@ -863,6 +895,7 @@ async def executors_search(update: Update, context: ContextTypes.DEFAULT_TYPE,
         logger.info(f"Executors search results generated for user {user_id}, length: {len(search_results)}")
         
         # Send results
+        # AI-generated content is not escaped as it contains intentional markdown
         try:
             await thinking_msg.edit_text(
                 f"🔨 *Подходящие площадки для поиска исполнителей:*\n\n{search_results}",
@@ -948,8 +981,14 @@ async def add_employee_process(update: Update, context: ContextTypes.DEFAULT_TYP
     
     try:
         # Invite employee
-        success, message = user_manager.invite_employee(user_id, target_username)
+        try:
+            success, message = user_manager.invite_employee(user_id, target_username)
+        except Exception as e:
+            logger.error(f"Error calling invite_employee for user {user_id}: {e}")
+            success = False
+            message = f"Ошибка при отправке приглашения: {str(e)}"
         
+        logger.info(f"Invite employee: {success}, {message}")
         if success:
             await update.message.reply_text(
                 MESSAGES['employee_invited'].format(message=message),
@@ -979,10 +1018,11 @@ async def add_employee_process(update: Update, context: ContextTypes.DEFAULT_TYP
                         ]
                         reply_markup = InlineKeyboardMarkup(keyboard)
                         
+                        escaped_business_name = escape_markdown(business['business_name'])
                         await context.bot.send_message(
                             chat_id=target_user_id,
                             text=f"🎉 *Новое приглашение!*\n\n"
-                                 f"Вас пригласили стать сотрудником бизнеса *{business['business_name']}*\n\n"
+                                 f"Вас пригласили стать сотрудником бизнеса *{escaped_business_name}*\n\n"
                                  f"Выберите действие:",
                             parse_mode='Markdown',
                             reply_markup=reply_markup
@@ -991,8 +1031,7 @@ async def add_employee_process(update: Update, context: ContextTypes.DEFAULT_TYP
                     logger.warning(f"Failed to notify user {target_user_id}: {e}")
         else:
             await update.message.reply_text(
-                MESSAGES['employee_invite_error'].format(message=message),
-                parse_mode='Markdown'
+                MESSAGES['employee_invite_error'].format(message=message)
             )
         
         logger.info(f"User {user_id} invited {target_username}: {success}")
@@ -1032,8 +1071,9 @@ async def employees_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         all_employees = user_manager.get_all_employees(business['id'])
         
         if not all_employees:
+            escaped_business_name = escape_markdown(business['business_name'])
             await update.message.reply_text(
-                MESSAGES['employees_empty'].format(business_name=business['business_name']),
+                MESSAGES['employees_empty'].format(business_name=escaped_business_name),
                 parse_mode='Markdown'
             )
             return
@@ -1047,18 +1087,21 @@ async def employees_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             employees_text += "*✅ Принятые:*\n"
             for emp in accepted:
                 username = f"@{emp['username']}" if emp['username'] else emp['first_name']
-                employees_text += f"  • {username}\n"
+                escaped_username = escape_markdown(username)
+                employees_text += f"  • {escaped_username}\n"
             employees_text += "\n"
         
         if pending:
             employees_text += "*⏳ Ожидают ответа:*\n"
             for emp in pending:
                 username = f"@{emp['username']}" if emp['username'] else emp['first_name']
-                employees_text += f"  • {username}\n"
+                escaped_username = escape_markdown(username)
+                employees_text += f"  • {escaped_username}\n"
         
+        escaped_business_name = escape_markdown(business['business_name'])
         await update.message.reply_text(
             MESSAGES['employees_list'].format(
-                business_name=business['business_name'],
+                business_name=escaped_business_name,
                 employees=employees_text
             ),
             parse_mode='Markdown'
@@ -1090,8 +1133,10 @@ async def invitations_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         invitations_text = ""
         for inv in invitations:
             owner_name = f"@{inv['owner_username']}" if inv['owner_username'] else inv['owner_first_name']
-            invitations_text += f"*ID {inv['id']}:* {inv['business_name']}\n"
-            invitations_text += f"  От: {owner_name}\n\n"
+            escaped_business_name = escape_markdown(inv['business_name'])
+            escaped_owner_name = escape_markdown(owner_name)
+            invitations_text += f"*ID {inv['id']}:* {escaped_business_name}\n"
+            invitations_text += f"  От: {escaped_owner_name}\n\n"
         
         await update.message.reply_text(
             MESSAGES['invitations_list'].format(invitations=invitations_text),
@@ -1172,8 +1217,10 @@ async def accept_invitation_start(update: Update, context: ContextTypes.DEFAULT_
         invitations_text = "📬 *Ваши приглашения:*\n\n"
         for inv in invitations:
             owner_name = f"@{inv['owner_username']}" if inv['owner_username'] else inv['owner_first_name']
-            invitations_text += f"*ID {inv['id']}:* {inv['business_name']}\n"
-            invitations_text += f"  От: {owner_name}\n\n"
+            escaped_business_name = escape_markdown(inv['business_name'])
+            escaped_owner_name = escape_markdown(owner_name)
+            invitations_text += f"*ID {inv['id']}:* {escaped_business_name}\n"
+            invitations_text += f"  От: {escaped_owner_name}\n\n"
         
         invitations_text += "\n💡 Пожалуйста, укажите ID приглашения, которое хотите принять:"
         
@@ -1258,8 +1305,10 @@ async def reject_invitation_start(update: Update, context: ContextTypes.DEFAULT_
         invitations_text = "📬 *Ваши приглашения:*\n\n"
         for inv in invitations:
             owner_name = f"@{inv['owner_username']}" if inv['owner_username'] else inv['owner_first_name']
-            invitations_text += f"*ID {inv['id']}:* {inv['business_name']}\n"
-            invitations_text += f"  От: {owner_name}\n\n"
+            escaped_business_name = escape_markdown(inv['business_name'])
+            escaped_owner_name = escape_markdown(owner_name)
+            invitations_text += f"*ID {inv['id']}:* {escaped_business_name}\n"
+            invitations_text += f"  От: {escaped_owner_name}\n\n"
         
         invitations_text += "\n💡 Пожалуйста, укажите ID приглашения, которое хотите отклонить:"
         
@@ -1344,8 +1393,10 @@ async def my_businesses_command(update: Update, context: ContextTypes.DEFAULT_TY
         businesses_text = ""
         for biz in businesses:
             owner_name = f"@{biz['owner_username']}" if biz['owner_username'] else biz['owner_first_name']
-            businesses_text += f"• *{biz['business_name']}*\n"
-            businesses_text += f"  Владелец: {owner_name}\n\n"
+            escaped_business_name = escape_markdown(biz['business_name'])
+            escaped_owner_name = escape_markdown(owner_name)
+            businesses_text += f"• *{escaped_business_name}*\n"
+            businesses_text += f"  Владелец: {escaped_owner_name}\n\n"
         
         await update.message.reply_text(
             MESSAGES['my_businesses_list'].format(businesses=businesses_text),
@@ -1427,19 +1478,23 @@ async def task_description_handler(update: Update, context: ContextTypes.DEFAULT
         
         # Format response
         if ai_recommendation:
+            # Escape username (user input) but not reasoning (AI-generated)
+            escaped_username = escape_markdown(ai_recommendation['username'])
             ai_text = MESSAGES['task_ai_recommendation'].format(
-                username=ai_recommendation['username'],
-                reasoning=ai_recommendation['reasoning'],
+                username=escaped_username,
+                reasoning=ai_recommendation['reasoning'],  # AI-generated, not escaped
                 task_id=task['id']
             )
+            escaped_title = escape_markdown(title)
             response_text = MESSAGES['task_created'].format(
-                title=title,
+                title=escaped_title,
                 task_id=task['id'],
                 ai_recommendation=ai_text
             )
         else:
+            escaped_title = escape_markdown(title)
             response_text = MESSAGES['task_created_no_ai'].format(
-                title=title,
+                title=escaped_title,
                 task_id=task['id']
             )
         
@@ -1477,13 +1532,16 @@ async def available_tasks_command(update: Update, context: ContextTypes.DEFAULT_
         # Format tasks list
         tasks_text = ""
         for task in tasks:
-            tasks_text += f"*ID {task['id']}:* {task['title']}\n"
-            tasks_text += f"Бизнес: {task['business_name']}\n"
+            escaped_title = escape_markdown(task['title'])
+            escaped_business = escape_markdown(task['business_name'])
+            tasks_text += f"*ID {task['id']}:* {escaped_title}\n"
+            tasks_text += f"Бизнес: {escaped_business}\n"
             if task.get('description'):
                 desc = task['description'][:100]
                 if len(task['description']) > 100:
                     desc += "..."
-                tasks_text += f"Описание: {desc}\n"
+                escaped_desc = escape_markdown(desc)
+                tasks_text += f"Описание: {escaped_desc}\n"
             if task.get('ai_recommended_employee') == user_id:
                 tasks_text += "🤖 *AI рекомендует вас!*\n"
             tasks_text += "\n"
@@ -1517,14 +1575,18 @@ async def my_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         # Format tasks list
         tasks_text = ""
         for task in tasks:
-            tasks_text += f"*ID {task['id']}:* {task['title']}\n"
-            tasks_text += f"Бизнес: {task['business_name']}\n"
-            tasks_text += f"Статус: {task['status']}\n"
+            escaped_title = escape_markdown(task['title'])
+            escaped_business = escape_markdown(task['business_name'])
+            escaped_status = escape_markdown(task['status'])
+            tasks_text += f"*ID {task['id']}:* {escaped_title}\n"
+            tasks_text += f"Бизнес: {escaped_business}\n"
+            tasks_text += f"Статус: {escaped_status}\n"
             if task.get('description'):
                 desc = task['description'][:100]
                 if len(task['description']) > 100:
                     desc += "..."
-                tasks_text += f"Описание: {desc}\n"
+                escaped_desc = escape_markdown(desc)
+                tasks_text += f"Описание: {escaped_desc}\n"
             tasks_text += "\n"
         
         await update.message.reply_text(
@@ -1556,13 +1618,16 @@ async def take_task_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         # Format tasks list
         tasks_text = "📋 *Доступные задачи:*\n\n"
         for task in tasks:
-            tasks_text += f"*ID {task['id']}:* {task['title']}\n"
-            tasks_text += f"Бизнес: {task['business_name']}\n"
+            escaped_title = escape_markdown(task['title'])
+            escaped_business = escape_markdown(task['business_name'])
+            tasks_text += f"*ID {task['id']}:* {escaped_title}\n"
+            tasks_text += f"Бизнес: {escaped_business}\n"
             if task.get('description'):
                 desc = task['description'][:100]
                 if len(task['description']) > 100:
                     desc += "..."
-                tasks_text += f"Описание: {desc}\n"
+                escaped_desc = escape_markdown(desc)
+                tasks_text += f"Описание: {escaped_desc}\n"
             if task.get('ai_recommended_employee') == user_id:
                 tasks_text += "🤖 *AI рекомендует вас!*\n"
             tasks_text += "\n"
@@ -1705,11 +1770,13 @@ async def assign_task_process(update: Update, context: ContextTypes.DEFAULT_TYPE
                     from database import business_repo
                     task = business_repo.get_task(task_id)
                     if task:
+                        escaped_title = escape_markdown(task['title'])
+                        escaped_desc = escape_markdown(task['description'])
                         await context.bot.send_message(
                             chat_id=employee_id,
                             text=f"📋 *Новая задача назначена вам!*\n\n"
-                                 f"*{task['title']}*\n"
-                                 f"{task['description']}\n\n"
+                                 f"*{escaped_title}*\n"
+                                 f"{escaped_desc}\n\n"
                                  f"Посмотреть свои задачи: `/my_tasks`",
                             parse_mode='Markdown'
                         )
@@ -1765,13 +1832,16 @@ async def complete_task_start(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Format tasks list
         tasks_text = "📋 *Ваши задачи в работе:*\n\n"
         for task in in_progress_tasks:
-            tasks_text += f"*ID {task['id']}:* {task['title']}\n"
-            tasks_text += f"Бизнес: {task['business_name']}\n"
+            escaped_title = escape_markdown(task['title'])
+            escaped_business = escape_markdown(task['business_name'])
+            tasks_text += f"*ID {task['id']}:* {escaped_title}\n"
+            tasks_text += f"Бизнес: {escaped_business}\n"
             if task.get('description'):
                 desc = task['description'][:100]
                 if len(task['description']) > 100:
                     desc += "..."
-                tasks_text += f"Описание: {desc}\n"
+                escaped_desc = escape_markdown(desc)
+                tasks_text += f"Описание: {escaped_desc}\n"
             tasks_text += "\n"
         
         tasks_text += "\n💡 Пожалуйста, укажите ID задачи, которую хотите завершить:"
@@ -1868,14 +1938,17 @@ async def all_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         if available:
             tasks_text += "*📋 Доступные задачи:*\n"
             for task in available:
-                tasks_text += f"  • ID {task['id']}: {task['title']}\n"
+                escaped_title = escape_markdown(task['title'])
+                tasks_text += f"  • ID {task['id']}: {escaped_title}\n"
             tasks_text += "\n"
         
         if assigned:
             tasks_text += "*👤 Назначенные задачи:*\n"
             for task in assigned:
                 assignee = f"@{task['assigned_to_username']}" if task.get('assigned_to_username') else task.get('assigned_to_name', 'Unknown')
-                tasks_text += f"  • ID {task['id']}: {task['title']} → {assignee}\n"
+                escaped_title = escape_markdown(task['title'])
+                escaped_assignee = escape_markdown(assignee)
+                tasks_text += f"  • ID {task['id']}: {escaped_title} → {escaped_assignee}\n"
             tasks_text += "\n"
         
         if completed:
@@ -1986,6 +2059,7 @@ async def find_similar_command(update: Update, context: ContextTypes.DEFAULT_TYP
             logger.info(f"Similar users results generated for user {user_id}, length: {len(search_results)}")
             
             # Send results
+            # AI-generated content is not escaped as it contains intentional markdown
             try:
                 await thinking_msg.edit_text(
                     f"🤝 *Подходящие партнёры для сотрудничества:*\n\n{search_results}",

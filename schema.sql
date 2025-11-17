@@ -52,6 +52,21 @@ CREATE TABLE IF NOT EXISTS usage_history (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Tasks table
+CREATE TABLE IF NOT EXISTS tasks (
+    id SERIAL PRIMARY KEY,
+    business_id INTEGER NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    title VARCHAR(500) NOT NULL,
+    description TEXT,
+    assigned_to BIGINT REFERENCES users(user_id),
+    created_by BIGINT NOT NULL REFERENCES users(user_id),
+    status VARCHAR(20) NOT NULL DEFAULT 'available',
+    ai_recommended_employee BIGINT REFERENCES users(user_id),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    assigned_at TIMESTAMP,
+    completed_at TIMESTAMP
+);
+
 -- Create indexes for better query performance
 
 -- Users table indexes
@@ -65,6 +80,10 @@ CREATE INDEX IF NOT EXISTS idx_businesses_owner_id ON businesses(owner_id);
 CREATE INDEX IF NOT EXISTS idx_employees_business_id ON employees(business_id);
 CREATE INDEX IF NOT EXISTS idx_employees_user_id ON employees(user_id);
 CREATE INDEX IF NOT EXISTS idx_employees_status ON employees(status);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_business_id ON tasks(business_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_assigned_to ON tasks(assigned_to);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 
 -- Comments for documentation
 
