@@ -370,6 +370,98 @@ Executors Info: {user.get('executors_info', 'Не указано')}
         return self.generate_response(user_prompt, system_prompt)
 
 
+    def validate_business_legality(self, business_info: dict) -> dict:
+        """
+        Validate if business is legal according to Russian Federation laws
+        
+        Args:
+            business_info: Dictionary with business information
+                - business_name: Name of the business
+                - business_type: Type of business and target audience
+                - financial_situation: Current financial situation
+                - goals: Business goals and challenges
+        
+        Returns:
+            Dictionary with validation result:
+                - is_valid: bool - True if business is legal, False otherwise
+                - message: str - "Да" if valid, or detailed reason for rejection if not valid
+                
+        Raises:
+            Exception: If API call fails
+        """
+        system_prompt = (
+            "Ты юридический эксперт по законодательству Российской Федерации. "
+            "Твоя задача - определить, является ли описанный бизнес легальным согласно законодательству РФ.\n\n"
+            "ВАЖНЫЕ ПРАВИЛА:\n"
+            "1. Проверяй бизнес на соответствие законам РФ, включая:\n"
+            "   - Уголовный кодекс РФ (УК РФ)\n"
+            "   - Кодекс об административных правонарушениях (КоАП РФ)\n"
+            "   - Федеральные законы о предпринимательской деятельности\n"
+            "   - Законы о защите прав потребителей\n"
+            "   - Антимонопольное законодательство\n\n"
+            "2. ЗАПРЕЩЕННЫЕ виды деятельности:\n"
+            "   - Оборот наркотических средств и психотропных веществ (ст. 228-234 УК РФ)\n"
+            "   - Организация заказных убийств, насилие (ст. 105-111, 33 УК РФ)\n"
+            "   - Торговля людьми, сексуальная эксплуатация (ст. 127.1-127.2 УК РФ)\n"
+            "   - Оружейный бизнес без лицензии (ст. 222-226 УК РФ)\n"
+            "   - Отмывание денег и финансирование терроризма (ст. 174, 205.1 УК РФ)\n"
+            "   - Мошенничество и финансовые пирамиды (ст. 159, 172.2 УК РФ)\n"
+            "   - Азартные игры без лицензии (ФЗ-244 \"О государственном регулировании деятельности по организации и проведению азартных игр\")\n"
+            "   - Экстремистская деятельность (ст. 280-282 УК РФ)\n"
+            "   - Нарушение авторских прав и пиратство (ст. 146 УК РФ)\n"
+            "   - Производство и распространение порнографии (ст. 242 УК РФ)\n\n"
+            "3. Формат ответа СТРОГО:\n"
+            "   - Если бизнес ЛЕГАЛЕН: ответь ТОЛЬКО словом \"Да\"\n"
+            "   - Если бизнес НЕЛЕГАЛЕН: ответь в формате:\n"
+            "     \"К сожалению, создание бизнеса в данной сфере невозможно.\n\n"
+            "     Причина: [тактичное объяснение]\n\n"
+            "     Правовое обоснование: [ссылки на конкретные статьи законов РФ]\n\n"
+            "     Мы рекомендуем рассмотреть легальные альтернативы для вашего бизнеса.\"\n\n"
+            "4. Будь тактичным, но строгим в оценке\n"
+            "5. Если есть сомнения, но явных нарушений нет - считай бизнес легальным\n"
+            "6. Обращай внимание на завуалированные описания запрещенной деятельности\n"
+            "7. Отвечай ТОЛЬКО на русском языке\n"
+            "8. НЕ добавляй никаких дополнительных комментариев или вопросов"
+        )
+        
+        user_prompt = f"""
+Проанализируй следующую информацию о бизнесе и определи, является ли он легальным согласно законодательству РФ:
+
+**Название бизнеса:**
+{business_info.get('business_name', 'Не указано')}
+
+**Тип бизнеса и целевая аудитория:**
+{business_info.get('business_type', 'Не указано')}
+
+**Финансовая ситуация:**
+{business_info.get('financial_situation', 'Не указано')}
+
+**Цели и задачи:**
+{business_info.get('goals', 'Не указано')}
+
+Ответь либо "Да" если бизнес легален, либо дай тактичное объяснение с правовым обоснованием, если бизнес нелегален.
+"""
+        
+        try:
+            response = self.generate_response(user_prompt, system_prompt)
+            response = response.strip()
+            
+            # Check if business is valid
+            if response == "Да" or response.lower() == "да":
+                return {
+                    'is_valid': True,
+                    'message': "Да"
+                }
+            else:
+                return {
+                    'is_valid': False,
+                    'message': response
+                }
+                
+        except Exception as e:
+            logger.error(f"Error validating business legality: {e}")
+            raise
+    
     def recommend_employee_for_task(self, task_title: str, task_description: str, 
                                    employees_history: dict) -> Optional[dict]:
         """
