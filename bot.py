@@ -1088,7 +1088,8 @@ async def employees_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             for emp in accepted:
                 username = f"@{emp['username']}" if emp['username'] else emp['first_name']
                 escaped_username = escape_markdown(username)
-                employees_text += f"  • {escaped_username}\n"
+                rating = emp.get('rating', 500)
+                employees_text += f"  • {escaped_username} ⭐ {rating}\n"
             employees_text += "\n"
         
         if pending:
