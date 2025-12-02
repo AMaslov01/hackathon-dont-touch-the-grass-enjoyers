@@ -395,6 +395,7 @@ Executors Info: {user.get('executors_info', 'Не указано')}
             username = history.get('username', 'Unknown')
             first_name = history.get('first_name', '')
             completed_count = history.get('completed_tasks', 0)
+            abandonments_count = history.get('abandonments_count', 0)
             task_titles = history.get('task_titles', [])
             task_hours = history.get('task_hours', [])
             
@@ -404,6 +405,7 @@ Executors Info: {user.get('executors_info', 'Не указано')}
             
             employee_text = f"Сотрудник: @{username} ({first_name})\n"
             employee_text += f"Выполнено задач: {completed_count}\n"
+            employee_text += f"Отказов от задач: {abandonments_count}\n"
             
             if recent_tasks:
                 employee_text += "Последние задачи:\n"
@@ -449,6 +451,8 @@ USERNAME: @username
                 "Анализируй опыт сотрудников и рекомендуй лучшего кандидата на основе их истории выполненных задач. "
                 "Учитывай не только опыт, но и скорость выполнения похожих задач. "
                 "Предпочитай сотрудников, которые быстрее справляются с похожими задачами. "
+                "ВАЖНО: Обращай внимание на количество отказов от задач - сотрудники с большим количеством отказов менее надежны. "
+                "Отдавай предпочтение сотрудникам с меньшим количеством отказов и большим количеством выполненных задач. "
                 "Отвечай СТРОГО в указанном формате на русском языке."
             )
             

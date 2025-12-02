@@ -15,10 +15,10 @@ logger = logging.getLogger(__name__)
 
 class Database:
     """Database connection manager"""
-    
+
     def __init__(self):
         self.pool: Optional[SimpleConnectionPool] = None
-    
+
     def connect(self):
         """Initialize database connection pool"""
         try:
@@ -42,23 +42,23 @@ class Database:
         except Exception as e:
             logger.error(f"Failed to connect to database: {e}")
             raise
-    
+
     def get_connection(self):
         """Get a connection from the pool with no timeouts"""
         if not self.pool:
             raise Exception("Database pool not initialized")
         conn = self.pool.getconn()
-        
+
         # Configure session to prevent timeouts
         self.configure_session(conn)
-        
+
         return conn
-    
+
     def return_connection(self, conn):
         """Return connection to the pool"""
         if self.pool:
             self.pool.putconn(conn)
-    
+
     def refresh_connection(self, conn):
         """Refresh a connection to prevent timeouts during long operations"""
         try:
@@ -69,13 +69,13 @@ class Database:
         except Exception as e:
             logger.warning(f"Failed to refresh connection: {e}")
             return False
-    
+
     def close(self):
         """Close all database connections"""
         if self.pool:
             self.pool.closeall()
             logger.info("Database connection pool closed")
-    
+
     def configure_session(self, conn):
         """Configure session settings to prevent timeouts"""
         try:
@@ -88,7 +88,7 @@ class Database:
                 logger.debug("Session timeout settings configured")
         except Exception as e:
             logger.warning(f"Failed to configure session settings: {e}")
-    
+
     def create_tables(self):
         """Create necessary database tables"""
         conn = self.get_connection()
@@ -106,11 +106,13 @@ class Database:
                         last_token_refresh TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         workers_info TEXT,
                         executors_info TEXT,
+                        completed_tasks INTEGER DEFAULT 0,
+                        abandonments_count INTEGER DEFAULT 0,
                         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
-                
+
                 # Usage history table
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS usage_history (
@@ -122,7 +124,7 @@ class Database:
                         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
-                
+
                 # Businesses table
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS businesses (
@@ -137,7 +139,7 @@ class Database:
                         UNIQUE(owner_id)
                     )
                 """)
-                
+
                 # Employees table (invitations and accepted employees)
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS employees (
@@ -150,7 +152,7 @@ class Database:
                         UNIQUE(business_id, user_id)
                     )
                 """)
-                
+
                 # Tasks table
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS tasks (
@@ -162,74 +164,127 @@ class Database:
                         created_by BIGINT NOT NULL REFERENCES users(user_id),
                         status VARCHAR(20) NOT NULL DEFAULT 'available',
                         ai_recommended_employee BIGINT REFERENCES users(user_id),
+                        abandoned_by BIGINT REFERENCES users(user_id),
+                        abandoned_at TIMESTAMP,
                         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         assigned_at TIMESTAMP,
                         completed_at TIMESTAMP
                     )
                 """)
-                
+
                 # Create index for faster queries
                 cursor.execute("""
                     CREATE INDEX IF NOT EXISTS idx_usage_history_user_id 
                     ON usage_history(user_id)
                 """)
-                
+
                 cursor.execute("""
                     CREATE INDEX IF NOT EXISTS idx_usage_history_created_at 
                     ON usage_history(created_at)
                 """)
-                
+
                 cursor.execute("""
                     CREATE INDEX IF NOT EXISTS idx_businesses_owner_id 
                     ON businesses(owner_id)
                 """)
-                
+
                 cursor.execute("""
                     CREATE INDEX IF NOT EXISTS idx_employees_business_id 
                     ON employees(business_id)
                 """)
-                
+
                 cursor.execute("""
                     CREATE INDEX IF NOT EXISTS idx_employees_user_id 
                     ON employees(user_id)
                 """)
-                
+
                 cursor.execute("""
                     CREATE INDEX IF NOT EXISTS idx_employees_status 
                     ON employees(status)
                 """)
-                
+
                 cursor.execute("""
                     CREATE INDEX IF NOT EXISTS idx_tasks_business_id 
                     ON tasks(business_id)
                 """)
-                
+
                 cursor.execute("""
                     CREATE INDEX IF NOT EXISTS idx_tasks_assigned_to 
                     ON tasks(assigned_to)
                 """)
-                
+
                 cursor.execute("""
                     CREATE INDEX IF NOT EXISTS idx_tasks_status 
                     ON tasks(status)
                 """)
-                
+
                 conn.commit()
                 logger.info("Database tables created successfully")
+                
+                # Run migrations for existing tables
+                self.run_migrations(conn)
         except Exception as e:
             conn.rollback()
             logger.error(f"Failed to create tables: {e}")
             raise
         finally:
             self.return_connection(conn)
+    
+    def run_migrations(self, conn):
+        """Run database migrations for schema updates"""
+        try:
+            with conn.cursor() as cursor:
+                # Migration 1: Add abandoned_by and abandoned_at columns to tasks table
+                cursor.execute("""
+                    DO $$
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns 
+                            WHERE table_name='tasks' AND column_name='abandoned_by'
+                        ) THEN
+                            ALTER TABLE tasks ADD COLUMN abandoned_by BIGINT REFERENCES users(user_id);
+                            ALTER TABLE tasks ADD COLUMN abandoned_at TIMESTAMP;
+                            RAISE NOTICE 'Added abandoned_by and abandoned_at columns to tasks table';
+                        END IF;
+                    END $$;
+                """)
+                
+                # Migration 2: Add completed_tasks and abandonments_count columns to users table
+                cursor.execute("""
+                    DO $$
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns 
+                            WHERE table_name='users' AND column_name='completed_tasks'
+                        ) THEN
+                            ALTER TABLE users ADD COLUMN completed_tasks INTEGER DEFAULT 0;
+                            RAISE NOTICE 'Added completed_tasks column to users table';
+                        END IF;
+                        
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns 
+                            WHERE table_name='users' AND column_name='abandonments_count'
+                        ) THEN
+                            ALTER TABLE users ADD COLUMN abandonments_count INTEGER DEFAULT 0;
+                            RAISE NOTICE 'Added abandonments_count column to users table';
+                        END IF;
+                    END $$;
+                """)
+                
+                conn.commit()
+                logger.info("Database migrations completed successfully")
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to run migrations: {e}")
+            raise
 
 
 class UserRepository:
     """Repository for user operations"""
-    
+
     def __init__(self, db: Database):
         self.db = db
-    
+
     def get_user(self, user_id: int) -> Optional[dict]:
         """Get user by ID"""
         conn = self.db.get_connection()
@@ -243,8 +298,8 @@ class UserRepository:
                 return dict(result) if result else None
         finally:
             self.db.return_connection(conn)
-    
-    def create_user(self, user_id: int, username: str = None, 
+
+    def create_user(self, user_id: int, username: str = None,
                    first_name: str = None, last_name: str = None) -> dict:
         """Create a new user"""
         conn = self.db.get_connection()
@@ -271,7 +326,7 @@ class UserRepository:
             raise
         finally:
             self.db.return_connection(conn)
-    
+
     def update_user_info(self, user_id: int, username: str = None,
                         first_name: str = None, last_name: str = None):
         """Update user information"""
@@ -287,22 +342,22 @@ class UserRepository:
                 conn.commit()
         finally:
             self.db.return_connection(conn)
-    
+
     def get_or_create_user(self, user_id: int, username: str = None,
                           first_name: str = None, last_name: str = None) -> dict:
         """Get existing user or create a new one"""
         user = self.get_user(user_id)
         if user:
             # Update user info if changed
-            if (username != user.get('username') or 
-                first_name != user.get('first_name') or 
+            if (username != user.get('username') or
+                first_name != user.get('first_name') or
                 last_name != user.get('last_name')):
                 self.update_user_info(user_id, username, first_name, last_name)
                 user = self.get_user(user_id)
             return user
         else:
             return self.create_user(user_id, username, first_name, last_name)
-    
+
     def use_tokens(self, user_id: int, amount: int) -> bool:
         """Deduct tokens from user account"""
         conn = self.db.get_connection()
@@ -323,7 +378,7 @@ class UserRepository:
             return False
         finally:
             self.db.return_connection(conn)
-    
+
     def refresh_tokens(self, user_id: int) -> dict:
         """Refresh user tokens if time has passed"""
         conn = self.db.get_connection()
@@ -339,7 +394,7 @@ class UserRepository:
                     user_id,
                     datetime.now() - timedelta(hours=TOKEN_CONFIG['refresh_interval_hours'])
                 ))
-                
+
                 if cursor.fetchone():
                     # Refresh tokens
                     cursor.execute("""
@@ -362,8 +417,8 @@ class UserRepository:
             raise
         finally:
             self.db.return_connection(conn)
-    
-    def add_usage_history(self, user_id: int, prompt: str, 
+
+    def add_usage_history(self, user_id: int, prompt: str,
                          response: str, tokens_used: int):
         """Add usage history record"""
         conn = self.db.get_connection()
@@ -380,7 +435,35 @@ class UserRepository:
         finally:
             self.db.return_connection(conn)
     
-    
+    def get_usage_history(self, user_id: int, limit: int = None) -> list:
+        """Get usage history for a user"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                if limit:
+                    cursor.execute("""
+                        SELECT prompt, response, tokens_used, created_at
+                        FROM usage_history
+                        WHERE user_id = %s
+                        ORDER BY created_at DESC
+                        LIMIT %s
+                    """, (user_id, limit))
+                else:
+                    cursor.execute("""
+                        SELECT prompt, response, tokens_used, created_at
+                        FROM usage_history
+                        WHERE user_id = %s
+                        ORDER BY created_at DESC
+                    """, (user_id,))
+                results = cursor.fetchall()
+                return [dict(row) for row in results] if results else []
+        except Exception as e:
+            logger.error(f"Failed to get usage history for user {user_id}: {e}")
+            return []
+        finally:
+            self.db.return_connection(conn)
+
+
     def get_workers_info(self, user_id: int) -> Optional[str]:
         """Get user's workers search information"""
         conn = self.db.get_connection()
@@ -394,7 +477,7 @@ class UserRepository:
                 return result['workers_info'] if result else None
         finally:
             self.db.return_connection(conn)
-    
+
     def save_workers_info(self, user_id: int, workers_info: str) -> bool:
         """Save or update user's workers search information"""
         conn = self.db.get_connection()
@@ -414,7 +497,7 @@ class UserRepository:
             return False
         finally:
             self.db.return_connection(conn)
-    
+
     def get_executors_info(self, user_id: int) -> Optional[str]:
         """Get user's executors search information"""
         conn = self.db.get_connection()
@@ -428,7 +511,7 @@ class UserRepository:
                 return result['executors_info'] if result else None
         finally:
             self.db.return_connection(conn)
-    
+
     def save_executors_info(self, user_id: int, executors_info: str) -> bool:
         """Save or update user's executors search information"""
         conn = self.db.get_connection()
@@ -448,7 +531,7 @@ class UserRepository:
             return False
         finally:
             self.db.return_connection(conn)
-    
+
     def get_all_users_with_business_info(self, exclude_user_id: int = None) -> list:
         """Get all users who have business info (from businesses table)"""
         conn = self.db.get_connection()
@@ -473,7 +556,7 @@ class UserRepository:
                         FROM users u
                         JOIN businesses b ON u.user_id = b.owner_id
                     """)
-                
+
                 results = cursor.fetchall()
                 return [dict(row) for row in results] if results else []
         except Exception as e:
@@ -485,10 +568,10 @@ class UserRepository:
 
 class BusinessRepository:
     """Repository for business and employee operations"""
-    
+
     def __init__(self, db: Database):
         self.db = db
-    
+
     def get_business(self, owner_id: int) -> Optional[dict]:
         """Get business by owner ID"""
         conn = self.db.get_connection()
@@ -502,7 +585,7 @@ class BusinessRepository:
                 return dict(result) if result else None
         finally:
             self.db.return_connection(conn)
-    
+
     def get_business_by_id(self, business_id: int) -> Optional[dict]:
         """Get business by business ID"""
         conn = self.db.get_connection()
@@ -516,9 +599,9 @@ class BusinessRepository:
                 return dict(result) if result else None
         finally:
             self.db.return_connection(conn)
-    
-    def create_business(self, owner_id: int, business_name: str, 
-                       business_type: str = None, financial_situation: str = None, 
+
+    def create_business(self, owner_id: int, business_name: str,
+                       business_type: str = None, financial_situation: str = None,
                        goals: str = None) -> dict:
         """Create a new business"""
         conn = self.db.get_connection()
@@ -540,7 +623,7 @@ class BusinessRepository:
             raise
         finally:
             self.db.return_connection(conn)
-    
+
     def update_business(self, owner_id: int, business_name: str = None,
                        business_type: str = None, financial_situation: str = None,
                        goals: str = None) -> bool:
@@ -566,27 +649,27 @@ class BusinessRepository:
             return False
         finally:
             self.db.return_connection(conn)
-    
+
     def save_or_update_business(self, owner_id: int, business_name: str,
                                business_type: str = None, financial_situation: str = None,
                                goals: str = None) -> dict:
         """Create or update business"""
         existing = self.get_business(owner_id)
         if existing:
-            self.update_business(owner_id, business_name, business_type, 
+            self.update_business(owner_id, business_name, business_type,
                                financial_situation, goals)
             return self.get_business(owner_id)
         else:
             return self.create_business(owner_id, business_name, business_type,
                                        financial_situation, goals)
-    
+
     def get_user_by_username(self, username: str) -> Optional[int]:
         """Get user_id by username"""
         if not username:
             return None
         # Remove @ if present
         username = username.lstrip('@')
-        
+
         conn = self.db.get_connection()
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
@@ -598,7 +681,7 @@ class BusinessRepository:
                 return result['user_id'] if result else None
         finally:
             self.db.return_connection(conn)
-    
+
     def invite_employee(self, business_id: int, user_id: int) -> bool:
         """Invite a user to be an employee"""
         conn = self.db.get_connection()
@@ -624,7 +707,7 @@ class BusinessRepository:
             return False
         finally:
             self.db.return_connection(conn)
-    
+
     def get_pending_invitations(self, user_id: int) -> list:
         """Get all pending invitations for a user"""
         conn = self.db.get_connection()
@@ -647,7 +730,7 @@ class BusinessRepository:
             return []
         finally:
             self.db.return_connection(conn)
-    
+
     def respond_to_invitation(self, invitation_id: int, accept: bool) -> bool:
         """Accept or reject an invitation"""
         conn = self.db.get_connection()
@@ -674,7 +757,7 @@ class BusinessRepository:
             return False
         finally:
             self.db.return_connection(conn)
-    
+
     def get_employees(self, business_id: int, status: str = 'accepted') -> list:
         """Get employees of a business"""
         conn = self.db.get_connection()
@@ -695,7 +778,7 @@ class BusinessRepository:
             return []
         finally:
             self.db.return_connection(conn)
-    
+
     def get_all_employees(self, business_id: int) -> list:
         """Get all employees (all statuses) of a business"""
         conn = self.db.get_connection()
@@ -716,12 +799,12 @@ class BusinessRepository:
             return []
         finally:
             self.db.return_connection(conn)
-    
+
     def is_business_owner(self, user_id: int) -> bool:
         """Check if user is a business owner"""
         business = self.get_business(user_id)
         return business is not None
-    
+
     def is_employee(self, user_id: int, business_id: int = None) -> bool:
         """Check if user is an employee (of a specific business or any business)"""
         conn = self.db.get_connection()
@@ -740,7 +823,7 @@ class BusinessRepository:
                 return cursor.fetchone() is not None
         finally:
             self.db.return_connection(conn)
-    
+
     def get_user_businesses(self, user_id: int) -> list:
         """Get all businesses where user is an employee"""
         conn = self.db.get_connection()
@@ -762,7 +845,7 @@ class BusinessRepository:
             return []
         finally:
             self.db.return_connection(conn)
-    
+
     def remove_employee(self, business_id: int, user_id: int) -> bool:
         """Remove an employee from a business"""
         conn = self.db.get_connection()
@@ -787,10 +870,10 @@ class BusinessRepository:
             return False
         finally:
             self.db.return_connection(conn)
-    
+
     # Task management methods
-    
-    def create_task(self, business_id: int, title: str, description: str, 
+
+    def create_task(self, business_id: int, title: str, description: str,
                    created_by: int, ai_recommended_employee: int = None) -> dict:
         """Create a new task"""
         conn = self.db.get_connection()
@@ -812,7 +895,7 @@ class BusinessRepository:
             raise
         finally:
             self.db.return_connection(conn)
-    
+
     def get_task(self, task_id: int) -> Optional[dict]:
         """Get task by ID"""
         conn = self.db.get_connection()
@@ -833,7 +916,7 @@ class BusinessRepository:
                 return dict(result) if result else None
         finally:
             self.db.return_connection(conn)
-    
+
     def get_available_tasks(self, business_id: int) -> list:
         """Get all available (unassigned) tasks for a business"""
         conn = self.db.get_connection()
@@ -856,7 +939,7 @@ class BusinessRepository:
             return []
         finally:
             self.db.return_connection(conn)
-    
+
     def get_assigned_tasks(self, user_id: int, include_completed: bool = False) -> list:
         """Get tasks assigned to a user"""
         conn = self.db.get_connection()
@@ -866,7 +949,7 @@ class BusinessRepository:
                     status_filter = "AND t.status IN ('assigned', 'in_progress', 'completed')"
                 else:
                     status_filter = "AND t.status IN ('assigned', 'in_progress')"
-                
+
                 cursor.execute(f"""
                     SELECT t.*, 
                            u.username as created_by_username, u.first_name as created_by_name,
@@ -884,7 +967,7 @@ class BusinessRepository:
             return []
         finally:
             self.db.return_connection(conn)
-    
+
     def get_business_tasks(self, business_id: int, status: str = None) -> list:
         """Get all tasks for a business, optionally filtered by status"""
         conn = self.db.get_connection()
@@ -894,10 +977,12 @@ class BusinessRepository:
                     query = """
                         SELECT t.*, 
                                u1.username as created_by_username, u1.first_name as created_by_name,
-                               u2.username as assigned_to_username, u2.first_name as assigned_to_name
+                               u2.username as assigned_to_username, u2.first_name as assigned_to_name,
+                               u3.username as abandoned_by_username, u3.first_name as abandoned_by_name
                         FROM tasks t
                         LEFT JOIN users u1 ON t.created_by = u1.user_id
                         LEFT JOIN users u2 ON t.assigned_to = u2.user_id
+                        LEFT JOIN users u3 ON t.abandoned_by = u3.user_id
                         WHERE t.business_id = %s AND t.status = %s
                         ORDER BY t.created_at DESC
                     """
@@ -906,15 +991,17 @@ class BusinessRepository:
                     query = """
                         SELECT t.*, 
                                u1.username as created_by_username, u1.first_name as created_by_name,
-                               u2.username as assigned_to_username, u2.first_name as assigned_to_name
+                               u2.username as assigned_to_username, u2.first_name as assigned_to_name,
+                               u3.username as abandoned_by_username, u3.first_name as abandoned_by_name
                         FROM tasks t
                         LEFT JOIN users u1 ON t.created_by = u1.user_id
                         LEFT JOIN users u2 ON t.assigned_to = u2.user_id
+                        LEFT JOIN users u3 ON t.abandoned_by = u3.user_id
                         WHERE t.business_id = %s
                         ORDER BY t.created_at DESC
                     """
                     cursor.execute(query, (business_id,))
-                
+
                 results = cursor.fetchall()
                 return [dict(row) for row in results] if results else []
         except Exception as e:
@@ -922,7 +1009,7 @@ class BusinessRepository:
             return []
         finally:
             self.db.return_connection(conn)
-    
+
     def assign_task(self, task_id: int, user_id: int, assigned_by: int) -> bool:
         """Assign a task to a user"""
         conn = self.db.get_connection()
@@ -932,8 +1019,10 @@ class BusinessRepository:
                     UPDATE tasks 
                     SET assigned_to = %s, 
                         status = 'assigned',
-                        assigned_at = CURRENT_TIMESTAMP
-                    WHERE id = %s AND status = 'available'
+                        assigned_at = CURRENT_TIMESTAMP,
+                        abandoned_by = NULL,
+                        abandoned_at = NULL
+                    WHERE id = %s AND status IN ('available', 'abandoned')
                     RETURNING id
                 """, (user_id, task_id))
                 result = cursor.fetchone()
@@ -950,11 +1039,11 @@ class BusinessRepository:
             return False
         finally:
             self.db.return_connection(conn)
-    
+
     def take_task(self, task_id: int, user_id: int) -> bool:
         """Employee takes a task"""
         return self.assign_task(task_id, user_id, user_id)
-    
+
     def complete_task(self, task_id: int, user_id: int) -> bool:
         """Mark task as completed"""
         conn = self.db.get_connection()
@@ -969,6 +1058,13 @@ class BusinessRepository:
                     RETURNING id
                 """, (task_id, user_id))
                 result = cursor.fetchone()
+                if result:
+                    cursor.execute("""
+                    UPDATE users 
+                    SET completed_tasks = COALESCE(completed_tasks, 0) + 1,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE user_id = %s
+                    """, (user_id,))
                 conn.commit()
                 if result:
                     logger.info(f"Task {task_id} completed by user {user_id}")
@@ -982,7 +1078,7 @@ class BusinessRepository:
             return False
         finally:
             self.db.return_connection(conn)
-    
+
     def get_employee_task_history(self, user_id: int, business_id: int) -> list:
         """Get completed tasks history for an employee (for AI recommendations)"""
         conn = self.db.get_connection()
@@ -1004,7 +1100,7 @@ class BusinessRepository:
             return []
         finally:
             self.db.return_connection(conn)
-    
+
     def get_all_employees_task_history(self, business_id: int) -> dict:
         """Get task history for all employees of a business (for AI recommendations)"""
         conn = self.db.get_connection()
@@ -1013,6 +1109,7 @@ class BusinessRepository:
                 cursor.execute("""
                     SELECT e.user_id, u.username, u.first_name,
                            COUNT(t.id) as completed_tasks,
+                           u.abandonments_count,
                            ARRAY_AGG(t.title ORDER BY t.completed_at DESC) as task_titles,
                            ARRAY_AGG(t.description ORDER BY t.completed_at DESC) as task_descriptions,
                            ARRAY_AGG(
@@ -1027,10 +1124,10 @@ class BusinessRepository:
                         AND t.assigned_at IS NOT NULL
                         AND t.completed_at IS NOT NULL
                     WHERE e.business_id = %s AND e.status = 'accepted'
-                    GROUP BY e.user_id, u.username, u.first_name
+                    GROUP BY e.user_id, u.username, u.first_name, u.abandonments_count
                 """, (business_id, business_id))
                 results = cursor.fetchall()
-                
+
                 # Format results
                 employees_history = {}
                 for row in results:
@@ -1038,16 +1135,17 @@ class BusinessRepository:
                     task_titles = [t for t in (row['task_titles'] or []) if t][:10]
                     task_descriptions = [d for d in (row['task_descriptions'] or []) if d][:10]
                     task_hours = [h for h in (row['task_hours'] or []) if h is not None][:10]
-                    
+
                     employees_history[row['user_id']] = {
                         'username': row['username'],
                         'first_name': row['first_name'],
                         'completed_tasks': row['completed_tasks'],
+                        'abandonments_count': row.get('abandonments_count', 0) or 0,
                         'task_titles': task_titles,
                         'task_descriptions': task_descriptions,
                         'task_hours': task_hours  # Time in hours to complete each task
                     }
-                
+
                 return employees_history
         except Exception as e:
             logger.error(f"Failed to get employees task history: {e}")
@@ -1055,6 +1153,41 @@ class BusinessRepository:
         finally:
             self.db.return_connection(conn)
 
+    def abandon_task(self, task_id: int, user_id: int) -> bool:
+        """Employee abandons a taken task - меняет статус на 'abandoned'"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE tasks 
+                    SET status = 'abandoned',
+                        abandoned_by = %s,
+                        abandoned_at = CURRENT_TIMESTAMP
+                    WHERE id = %s AND assigned_to = %s 
+                    AND status IN ('assigned', 'in_progress')
+                    RETURNING id
+                """, (user_id, task_id, user_id))
+                result = cursor.fetchone()
+                if result:
+                    cursor.execute("""
+                        UPDATE users 
+                        SET abandonments_count = COALESCE(abandonments_count, 0) + 1,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE user_id = %s
+                    """, (user_id,))
+                conn.commit()
+                if result:
+                    logger.info(f"Task {task_id} abandoned by user {user_id}")
+                    return True
+                else:
+                    logger.warning(f"Task {task_id} cannot be abandoned by user {user_id}")
+                    return False
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to abandon task: {e}")
+            return False
+        finally:
+            self.db.return_connection(conn)
 
 # Global database instance
 db = Database()
