@@ -53,6 +53,8 @@ DB_PASSWORD=postgres
 ### 3. Запуск PostgreSQL и настройка БД
 
 ```bash
+#Установите PostgreSQL
+sudo apt install postgresql #Linux/WSL
 # Запустите PostgreSQL (если еще не запущен)
 sudo service postgresql start  # Linux/WSL
 # или 
@@ -62,12 +64,12 @@ brew services start postgresql  # macOS
 sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD 'postgres';"
 
 # Создать базу данных
-psql -U postgres
+psql -U postgres -h localhost -p 5432
 CREATE DATABASE telegram_bot;
 \q
 
 # Загрузить схему
-psql -U postgres -d telegram_bot -f schema.sql
+psql -U postgres -d telegram_bot -h localhost -p 5432 -f schema.sql
 
 ```
 

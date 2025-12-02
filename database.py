@@ -147,6 +147,7 @@ class Database:
                         business_id INTEGER NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
                         user_id BIGINT NOT NULL REFERENCES users(user_id),
                         status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                        rating INTEGER NOT NULL DEFAULT 500,
                         invited_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         responded_at TIMESTAMP,
                         UNIQUE(business_id, user_id)
@@ -218,6 +219,21 @@ class Database:
                     ON tasks(status)
                 """)
 
+                
+                # Migration: Add rating column to employees table if it doesn't exist
+                cursor.execute("""
+                    DO $$ 
+                    BEGIN 
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns 
+                            WHERE table_name = 'employees' AND column_name = 'rating'
+                        ) THEN
+                            ALTER TABLE employees ADD COLUMN rating INTEGER NOT NULL DEFAULT 500;
+                            RAISE NOTICE 'Added rating column to employees table';
+                        END IF;
+                    END $$;
+                """)
+                
                 conn.commit()
                 logger.info("Database tables created successfully")
                 
@@ -871,6 +887,60 @@ class BusinessRepository:
         finally:
             self.db.return_connection(conn)
 
+    
+    def update_employee_rating(self, business_id: int, user_id: int, 
+                              rating_change: int) -> Optional[int]:
+        """
+        Update employee rating by adding/subtracting points
+        Rating is clamped between 0 and 1000
+        
+        Args:
+            business_id: ID of the business
+            user_id: ID of the employee
+            rating_change: Amount to add (positive) or subtract (negative)
+        
+        Returns:
+            New rating value or None if employee not found
+        """
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE employees 
+                    SET rating = GREATEST(0, LEAST(1000, rating + %s))
+                    WHERE business_id = %s AND user_id = %s AND status = 'accepted'
+                    RETURNING rating
+                """, (rating_change, business_id, user_id))
+                result = cursor.fetchone()
+                conn.commit()
+                if result:
+                    new_rating = result[0]
+                    logger.info(f"Updated rating for employee {user_id} in business {business_id}: change={rating_change}, new_rating={new_rating}")
+                    return new_rating
+                else:
+                    logger.warning(f"Employee {user_id} not found in business {business_id}")
+                    return None
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to update employee rating: {e}")
+            return None
+        finally:
+            self.db.return_connection(conn)
+    
+    def get_employee_rating(self, business_id: int, user_id: int) -> Optional[int]:
+        """Get employee rating in a specific business"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT rating FROM employees
+                    WHERE business_id = %s AND user_id = %s AND status = 'accepted'
+                """, (business_id, user_id))
+                result = cursor.fetchone()
+                return result[0] if result else None
+        finally:
+            self.db.return_connection(conn)
+    
     # Task management methods
 
     def create_task(self, business_id: int, title: str, description: str,
