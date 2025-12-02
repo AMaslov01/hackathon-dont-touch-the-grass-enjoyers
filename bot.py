@@ -358,6 +358,55 @@ async def finance_question_4(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     logger.info(f"User {user_id} completed all questions")
     
+    # Validate business legality before saving
+    try:
+        # Show validation message
+        validation_msg = await update.message.reply_text(
+            "🔍 Проверяем информацию о бизнесе на соответствие законодательству РФ..."
+        )
+        
+        # Prepare business info for validation
+        business_info = {
+            'business_name': context.user_data['business_name'],
+            'business_type': context.user_data['business_type'],
+            'financial_situation': context.user_data['financial_situation'],
+            'goals': context.user_data['goals']
+        }
+        
+        # Validate business legality using AI
+        validation_result = ai_client.validate_business_legality(business_info)
+        
+        # Delete validation message
+        try:
+            await validation_msg.delete()
+        except:
+            pass
+        
+        # Check if business is legal
+        if not validation_result['is_valid']:
+            logger.warning(f"Business validation failed for user {user_id}")
+            await update.message.reply_text(
+                f"❌ {validation_result['message']}",
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
+        
+        logger.info(f"Business validation passed for user {user_id}")
+        
+    except Exception as e:
+        logger.error(f"Error validating business legality for user {user_id}: {e}")
+        # Delete validation message if it exists
+        try:
+            await validation_msg.delete()
+        except:
+            pass
+        await update.message.reply_text(
+            "❌ Произошла ошибка при проверке информации о бизнесе. "
+            "Пожалуйста, попробуйте позже или обратитесь в поддержку.",
+            parse_mode='Markdown'
+        )
+        return ConversationHandler.END
+    
     # Save business info to database
     try:
         success = user_manager.save_business_info(
