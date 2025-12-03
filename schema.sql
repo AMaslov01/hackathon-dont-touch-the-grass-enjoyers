@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS users (
     business_info TEXT,
     workers_info TEXT,
     executors_info TEXT,
+    completed_tasks INTEGER DEFAULT 0,
+    abandonments_count INTEGER DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -62,6 +64,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     created_by BIGINT NOT NULL REFERENCES users(user_id),
     status VARCHAR(20) NOT NULL DEFAULT 'available',
     ai_recommended_employee BIGINT REFERENCES users(user_id),
+    abandoned_by BIGINT REFERENCES users(user_id),
+    abandoned_at TIMESTAMP,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     assigned_at TIMESTAMP,
     completed_at TIMESTAMP

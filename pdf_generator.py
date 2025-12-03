@@ -119,6 +119,14 @@ def register_fonts():
             'bolditalic': 'DejaVuSans-BoldOblique.ttf'
         }
         
+        # Also try Windows default fonts as fallback
+        windows_fonts = {
+            'normal': 'arial.ttf',
+            'bold': 'arialbd.ttf',
+            'italic': 'ariali.ttf',
+            'bolditalic': 'arialbi.ttf'
+        }
+        
         fonts_found = {}
         
         # Search for fonts in all locations
@@ -158,6 +166,36 @@ def register_fonts():
             _FONT_BOLD_ITALIC = fonts_found.get('bolditalic', _FONT_BOLD)
             _FONTS_AVAILABLE = True
             logger.info("DejaVuSans fonts successfully registered")
+            return True
+        
+        # Try Windows Arial fonts
+        logger.info("DejaVu fonts not found, trying Windows Arial fonts...")
+        fonts_found = {}
+        for location in dejavu_locations:
+            if not os.path.exists(location):
+                continue
+            
+            for style, filename in windows_fonts.items():
+                if style in fonts_found:
+                    continue
+                
+                font_path = os.path.join(location, filename)
+                if os.path.exists(font_path):
+                    try:
+                        font_name = f'WinArial-{style.capitalize()}'
+                        pdfmetrics.registerFont(TTFont(font_name, font_path))
+                        fonts_found[style] = font_name
+                        logger.info(f"Registered {font_name} from {font_path}")
+                    except Exception as e:
+                        logger.warning(f"Could not register {font_path}: {e}")
+        
+        if 'normal' in fonts_found and 'bold' in fonts_found:
+            _FONT_NORMAL = fonts_found.get('normal', 'WinArial-Normal')
+            _FONT_BOLD = fonts_found.get('bold', 'WinArial-Bold')
+            _FONT_ITALIC = fonts_found.get('italic', _FONT_NORMAL)
+            _FONT_BOLD_ITALIC = fonts_found.get('bolditalic', _FONT_BOLD)
+            _FONTS_AVAILABLE = True
+            logger.info("Windows Arial fonts successfully registered")
             return True
         
         # Try Arial Unicode (macOS fallback)
@@ -206,64 +244,90 @@ def clean_text_for_pdf(text: str) -> str:
     Clean text for PDF generation - remove emojis and unsupported characters
     Keep Cyrillic, Latin, numbers, and basic punctuation
     """
+    if not text:
+        return ""
+    
     import re
     
-    # First, remove BOM and other invisible characters
-    # Remove BOM (Byte Order Mark)
-    text = text.replace('\ufeff', '')
-    # Remove zero-width spaces and joiners
-    text = text.replace('\u200b', '')  # Zero-width space
-    text = text.replace('\u200c', '')  # Zero-width non-joiner
-    text = text.replace('\u200d', '')  # Zero-width joiner
-    text = text.replace('\ufff9', '')  # Interlinear annotation anchor
-    text = text.replace('\ufffa', '')  # Interlinear annotation separator
-    text = text.replace('\ufffb', '')  # Interlinear annotation terminator
-    
-    # Remove control characters (except newlines and tabs)
-    text = re.sub(r'[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f-\x9f]', '', text)
-    
-    # Remove emojis and special Unicode characters
-    # Keep: Cyrillic (0400-04FF), Latin (0000-007F, 0080-00FF), 
-    # Extended Latin (0100-017F), numbers, basic punctuation, newlines
-    # Currency symbols: Euro (20AC), Ruble (20BD), Dollar, etc.
-    # Common special chars: dashes (2013-2015), quotes (2018-201D), bullet (2022)
-    cleaned = re.sub(
-        r'[^\u0000-\u007F\u0080-\u00FF\u0100-\u017F\u0400-\u04FF'
-        r'\u2013-\u2015\u2018-\u201D\u2020-\u2022\u20AC\u20BD'
-        r'\s\-.,!?:;()"\'\[\]{}@#№$%^&*+=<>|~/\\\n]', 
-        '', text)
-    
-    # Clean up whitespace - normalize spaces but keep single spaces between words
-    lines = cleaned.split('\n')
-    lines = [' '.join(line.split()) for line in lines]  # This properly normalizes spaces
-    cleaned = '\n'.join(lines)
-    
-    # Final strip to remove leading/trailing whitespace
-    return cleaned.strip()
+    try:
+        # Convert to string if not already
+        text = str(text)
+        
+        # First, remove BOM and other invisible characters
+        # Remove BOM (Byte Order Mark)
+        text = text.replace('\ufeff', '')
+        # Remove zero-width spaces and joiners
+        text = text.replace('\u200b', '')  # Zero-width space
+        text = text.replace('\u200c', '')  # Zero-width non-joiner
+        text = text.replace('\u200d', '')  # Zero-width joiner
+        text = text.replace('\ufff9', '')  # Interlinear annotation anchor
+        text = text.replace('\ufffa', '')  # Interlinear annotation separator
+        text = text.replace('\ufffb', '')  # Interlinear annotation terminator
+        
+        # Remove control characters (except newlines and tabs)
+        text = re.sub(r'[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f-\x9f]', '', text)
+        
+        # Remove emojis and special Unicode characters
+        # Keep: Cyrillic (0400-04FF), Latin (0000-007F, 0080-00FF), 
+        # Extended Latin (0100-017F), numbers, basic punctuation, newlines
+        # Currency symbols: Euro (20AC), Ruble (20BD), Dollar, etc.
+        # Common special chars: dashes (2013-2015), quotes (2018-201D), bullet (2022)
+        cleaned = re.sub(
+            r'[^\u0000-\u007F\u0080-\u00FF\u0100-\u017F\u0400-\u04FF'
+            r'\u2013-\u2015\u2018-\u201D\u2020-\u2022\u20AC\u20BD'
+            r'\s\-.,!?:;()"\'\[\]{}@#№$%^&*+=<>|~/\\\n]', 
+            '', text)
+        
+        # Clean up whitespace - normalize spaces but keep single spaces between words
+        lines = cleaned.split('\n')
+        lines = [' '.join(line.split()) for line in lines]  # This properly normalizes spaces
+        cleaned = '\n'.join(lines)
+        
+        # Final strip to remove leading/trailing whitespace
+        return cleaned.strip()
+    except Exception as e:
+        logger.warning(f"Error cleaning text for PDF: {e}")
+        return "[текст не может быть отображен]"
 
 
 def format_text_for_pdf(text: str) -> str:
     """
     Convert markdown-like formatting to ReportLab HTML tags
     Handles: **bold**, *italic*, __bold__, _italic_
+    Note: Should be called AFTER clean_text_for_pdf which escapes HTML
     """
+    if not text:
+        return ""
+    
     import re
     
-    # Bold: **text** or __text__
-    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
-    text = re.sub(r'__(.+?)__', r'<b>\1</b>', text)
-    
-    # Italic: *text* or _text_ (but not in URLs or after numbers)
-    text = re.sub(r'(?<!\w)\*(.+?)\*(?!\w)', r'<i>\1</i>', text)
-    text = re.sub(r'(?<!\w)_(.+?)_(?!\w)', r'<i>\1</i>', text)
-    
-    return text
+    try:
+        # Bold: **text** or __text__
+        text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+        text = re.sub(r'__(.+?)__', r'<b>\1</b>', text)
+        
+        # Italic: *text* or _text_ (but not in URLs or after numbers)
+        text = re.sub(r'(?<!\w)\*(.+?)\*(?!\w)', r'<i>\1</i>', text)
+        text = re.sub(r'(?<!\w)_(.+?)_(?!\w)', r'<i>\1</i>', text)
+        
+        return text
+    except Exception as e:
+        logger.warning(f"Error formatting text for PDF: {e}")
+        return text
 
 
 class FinancialPlanPDF:
     """Generate professional financial plan PDFs"""
     
     def __init__(self):
+        global _FONTS_AVAILABLE
+        # If fonts are not available, try to register them again
+        if not _FONTS_AVAILABLE:
+            logger.warning("Fonts not available, attempting to register...")
+            register_fonts()
+        
+        # Log which fonts are being used
+        logger.info(f"FinancialPlanPDF using fonts: normal={_FONT_NORMAL}, bold={_FONT_BOLD}, available={_FONTS_AVAILABLE}")
         self.styles = getSampleStyleSheet()
         self._setup_styles()
         self.story = []
@@ -271,9 +335,12 @@ class FinancialPlanPDF:
     def _setup_styles(self):
         """Setup custom styles for the document"""
         # Use registered fonts (DejaVuSans or fallback to Helvetica)
+        global _FONT_NORMAL, _FONT_BOLD, _FONT_ITALIC
         font_normal = _FONT_NORMAL
         font_bold = _FONT_BOLD
         font_italic = _FONT_ITALIC
+        
+        logger.info(f"FinancialPlanPDF setting up styles with fonts: {font_normal}, {font_bold}, {font_italic}")
         
         # Title style
         self.styles.add(ParagraphStyle(
@@ -336,12 +403,12 @@ class FinancialPlanPDF:
         title = clean_text_for_pdf("Финансовый План")
         self.story.append(Paragraph(title, self.styles['CustomTitle']))
         
-        # Metadata
+        # Metadata - clean date to ensure proper encoding
         date_str = datetime.now().strftime("%d.%m.%Y")
+        date_str = clean_text_for_pdf(date_str)
         meta = f"{date_str}"
         
-        # Note: meta contains HTML tags (<br/>), don't clean it
-        self.story.append(Paragraph(meta, self.styles['Normal']))
+        self.story.append(Paragraph(meta, self.styles['CustomBody']))
         self.story.append(Spacer(1, 20))
         
         # Separator line
@@ -651,5 +718,250 @@ class FinancialPlanPDF:
             logger.warning(f"Error cleaning up old PDFs: {e}")
 
 
-# Global PDF generator instance
+class ChatHistoryPDF:
+    """Generate chat history PDFs"""
+    
+    def __init__(self):
+        global _FONTS_AVAILABLE
+        # If fonts are not available, try to register them again
+        if not _FONTS_AVAILABLE:
+            logger.warning("Fonts not available, attempting to register...")
+            register_fonts()
+        
+        # Log which fonts are being used
+        logger.info(f"ChatHistoryPDF using fonts: normal={_FONT_NORMAL}, bold={_FONT_BOLD}, available={_FONTS_AVAILABLE}")
+        self.styles = getSampleStyleSheet()
+        self._setup_styles()
+        self.story = []
+        
+    def _setup_styles(self):
+        """Setup custom styles for the document"""
+        global _FONT_NORMAL, _FONT_BOLD, _FONT_ITALIC
+        font_normal = _FONT_NORMAL
+        font_bold = _FONT_BOLD
+        font_italic = _FONT_ITALIC
+        
+        logger.info(f"Setting up styles with fonts: {font_normal}, {font_bold}, {font_italic}")
+        
+        # Title style
+        self.styles.add(ParagraphStyle(
+            name='ChatTitle',
+            parent=self.styles['Title'],
+            fontSize=20,
+            textColor=colors.HexColor('#1a472a'),
+            spaceAfter=20,
+            alignment=TA_CENTER,
+            fontName=font_bold
+        ))
+        
+        # User message style
+        self.styles.add(ParagraphStyle(
+            name='UserMessage',
+            parent=self.styles['BodyText'],
+            fontSize=10,
+            leading=14,
+            textColor=colors.HexColor('#1565c0'),
+            leftIndent=10,
+            rightIndent=10,
+            spaceAfter=6,
+            fontName=font_bold
+        ))
+        
+        # Bot response style
+        self.styles.add(ParagraphStyle(
+            name='BotResponse',
+            parent=self.styles['BodyText'],
+            fontSize=10,
+            leading=14,
+            alignment=TA_JUSTIFY,
+            leftIndent=10,
+            rightIndent=10,
+            spaceAfter=12,
+            fontName=font_normal
+        ))
+        
+        # Timestamp style
+        self.styles.add(ParagraphStyle(
+            name='Timestamp',
+            parent=self.styles['Normal'],
+            fontSize=8,
+            textColor=colors.grey,
+            leftIndent=10,
+            spaceAfter=3,
+            fontName=font_normal  # Use normal font for better number support
+        ))
+        
+        # Metadata style (for dates and user info)
+        self.styles.add(ParagraphStyle(
+            name='Metadata',
+            parent=self.styles['Normal'],
+            fontSize=10,
+            textColor=colors.HexColor('#424242'),
+            alignment=TA_CENTER,
+            spaceAfter=10,
+            fontName=font_normal
+        ))
+    
+    def _add_header(self, user_name: str = None):
+        """Add document header"""
+        title = clean_text_for_pdf("История общения с ботом")
+        self.story.append(Paragraph(title, self.styles['ChatTitle']))
+        
+        # Format date using ASCII-safe characters
+        date_str = datetime.now().strftime("%d.%m.%Y %H:%M")
+        date_str = clean_text_for_pdf(date_str)
+        
+        if user_name:
+            user_name = clean_text_for_pdf(user_name)
+            meta = f"Пользователь: {user_name}<br/>{date_str}"
+        else:
+            meta = date_str
+        
+        self.story.append(Paragraph(meta, self.styles['Metadata']))
+        self.story.append(Spacer(1, 15))
+        
+        # Separator line
+        line_table = Table([['']], colWidths=[17*cm])
+        line_table.setStyle(TableStyle([
+            ('LINEBELOW', (0, 0), (-1, -1), 2, colors.HexColor('#2e7d32')),
+        ]))
+        self.story.append(line_table)
+        self.story.append(Spacer(1, 15))
+    
+    def _add_message(self, prompt: str, response: str, timestamp, tokens_used: int = None):
+        """Add a message exchange to the document"""
+        try:
+            # Clean and format timestamp
+            if isinstance(timestamp, str):
+                time_str = timestamp
+            else:
+                time_str = timestamp.strftime("%d.%m.%Y %H:%M")
+            timestamp_text = clean_text_for_pdf(f"[{time_str}]")
+            
+            # Add timestamp
+            self.story.append(Paragraph(timestamp_text, self.styles['Timestamp']))
+            
+            # User message - limit length
+            prompt = str(prompt) if prompt else ""
+            if len(prompt) > 1000:
+                prompt = prompt[:1000] + "..."
+            prompt = clean_text_for_pdf(prompt)
+            prompt = format_text_for_pdf(prompt)
+            user_text = f"<b>Пользователь:</b> {prompt}"
+            self.story.append(Paragraph(user_text, self.styles['UserMessage']))
+            
+            # Bot response - limit length
+            response = str(response) if response else ""
+            if len(response) > 3000:
+                response = response[:3000] + "..."
+            response = clean_text_for_pdf(response)
+            response = format_text_for_pdf(response)
+            
+            # Split long responses into paragraphs
+            response_paragraphs = response.split('\n')
+            first = True
+            for para in response_paragraphs:
+                para = para.strip()
+                if para:
+                    try:
+                        if first:
+                            bot_text = f"<b>Бот:</b> {para}"
+                            first = False
+                        else:
+                            bot_text = para
+                        self.story.append(Paragraph(bot_text, self.styles['BotResponse']))
+                    except Exception as e:
+                        logger.warning(f"Failed to add paragraph to PDF: {e}")
+                        # Fallback: add simple text without formatting
+                        para_clean = clean_text_for_pdf(para)
+                        self.story.append(Paragraph(para_clean, self.styles['BotResponse']))
+            
+            # Add separator
+            self.story.append(Spacer(1, 8))
+            line_table = Table([['']], colWidths=[17*cm])
+            line_table.setStyle(TableStyle([
+                ('LINEBELOW', (0, 0), (-1, -1), 0.5, colors.HexColor('#e0e0e0')),
+            ]))
+            self.story.append(line_table)
+            self.story.append(Spacer(1, 12))
+        except Exception as e:
+            logger.error(f"Error adding message to PDF: {e}")
+            # Add error placeholder
+            error_text = clean_text_for_pdf("[Ошибка отображения сообщения]")
+            self.story.append(Paragraph(error_text, self.styles['Normal']))
+            self.story.append(Spacer(1, 12))
+    
+    def generate(self, 
+                 chat_history: list,
+                 user_name: str = None,
+                 output_path: str = None) -> str:
+        """
+        Generate PDF from chat history
+        
+        Args:
+            chat_history: List of dicts with 'prompt', 'response', 'created_at', 'tokens_used'
+            user_name: Optional user name for personalization
+            output_path: Optional custom output path
+            
+        Returns:
+            Path to generated PDF file
+        """
+        try:
+            # Clean user name
+            if user_name:
+                user_name = clean_text_for_pdf(user_name)
+            
+            # Setup output path
+            if not output_path:
+                output_dir = Path(__file__).parent / "temp_pdfs"
+                output_dir.mkdir(exist_ok=True)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                output_path = output_dir / f"chat_history_{timestamp}.pdf"
+            
+            # Create document
+            doc = SimpleDocTemplate(
+                str(output_path),
+                pagesize=A4,
+                rightMargin=2*cm,
+                leftMargin=2*cm,
+                topMargin=2*cm,
+                bottomMargin=2*cm
+            )
+            
+            # Build story
+            self.story = []
+            self._add_header(user_name)
+            
+            # Add messages (reverse to show oldest first)
+            for entry in reversed(chat_history):
+                try:
+                    self._add_message(
+                        prompt=entry.get('prompt', ''),
+                        response=entry.get('response', ''),
+                        timestamp=entry.get('created_at', datetime.now()),
+                        tokens_used=entry.get('tokens_used')
+                    )
+                except Exception as msg_error:
+                    logger.warning(f"Failed to add message to PDF: {msg_error}")
+                    # Continue with next message
+                    continue
+            
+            # Add footer
+            self.story.append(Spacer(1, 20))
+            footer_text = clean_text_for_pdf("Конец истории")
+            self.story.append(Paragraph(f"<i>{footer_text}</i>", self.styles['Metadata']))
+            
+            # Build PDF
+            doc.build(self.story)
+            
+            logger.info(f"Chat history PDF generated successfully: {output_path}")
+            return str(output_path)
+            
+        except Exception as e:
+            logger.error(f"Error generating chat history PDF: {e}", exc_info=True)
+            raise
+
+
+# Global PDF generator instances
 pdf_generator = FinancialPlanPDF()
+chat_history_pdf = ChatHistoryPDF()
