@@ -47,10 +47,7 @@ models/
 # RAG Data
 rag_data/
 rag_storage/
-ragBaseMaker/parsers/*.py
-ragBaseMaker/vectordb/*.py
-!ragBaseMaker/parsers/__init__.py
-!ragBaseMaker/vectordb/__init__.py
+
 
 # Database
 *.db
