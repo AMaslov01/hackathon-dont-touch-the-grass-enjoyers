@@ -150,10 +150,73 @@ async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await update.message.reply_text(MESSAGES['database_error'])
 
 
+async def roulette_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle the /roulette command"""
+    user_id = update.effective_user.id
+
+    try:
+        # Ensure user exists in database
+        user_manager.get_or_create_user(
+            user_id=user_id,
+            username=update.effective_user.username,
+            first_name=update.effective_user.first_name,
+            last_name=update.effective_user.last_name
+        )
+
+        # Try to spin the roulette
+        success, message, result = user_manager.spin_roulette(user_id)
+
+        if success and result:
+            # User won!
+            response_text = MESSAGES['roulette_win'].format(
+                amount=result['amount'],
+                new_balance=result['new_balance'],
+                next_spin=result['next_spin']
+            )
+            await update.message.reply_text(response_text, parse_mode='Markdown')
+            logger.info(f"User {user_id} won {result['amount']} tokens from roulette")
+        else:
+            # Roulette not available yet
+            if result:
+                response_text = MESSAGES['roulette_not_available'].format(
+                    next_spin=result['next_spin'],
+                    tokens=result['tokens']
+                )
+            else:
+                response_text = f"❌ {message}"
+            
+            await update.message.reply_text(response_text, parse_mode='Markdown')
+            logger.info(f"User {user_id} tried to spin roulette but it's not available")
+
+    except Exception as e:
+        logger.error(f"Error in roulette command for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the /help command"""
     await update.message.reply_text(MESSAGES['help'], parse_mode='Markdown')
     logger.info(f"User {update.effective_user.id} requested help")
+
+
+async def check_and_notify_roulette(update: Update, user_id: int):
+    """Check if user needs to be notified about available roulette"""
+    try:
+        # Check if notification is needed
+        if user_manager.check_and_notify_roulette(user_id):
+            from constants import TOKEN_CONFIG
+            # Send notification
+            notification_text = MESSAGES['roulette_available_notification'].format(
+                min=TOKEN_CONFIG['roulette_min'],
+                max=TOKEN_CONFIG['roulette_max']
+            )
+            await update.message.reply_text(notification_text, parse_mode='Markdown')
+            
+            # Mark as notified
+            user_manager.mark_roulette_notified(user_id)
+            logger.info(f"Notified user {user_id} about available roulette")
+    except Exception as e:
+        logger.error(f"Error checking roulette notification for user {user_id}: {e}")
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -167,6 +230,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
     
     logger.info(f"User {user_id} sent message: {user_message[:50]}...")
+
+    # Check if roulette notification is needed
+    await check_and_notify_roulette(update, user_id)
+
     
     # Send thinking indicator
     thinking_msg = await update.message.reply_text(MESSAGES['thinking'])
@@ -2781,6 +2848,38 @@ async def find_similar_command(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text(MESSAGES['similar_error'])
 
 
+async def setup_bot_commands(application):
+    """Set up bot commands for Telegram menu"""
+    from telegram import BotCommand
+    
+    commands = [
+        BotCommand("start", "Начать работу с ботом"),
+        BotCommand("help", "Справка по командам"),
+        BotCommand("balance", "Проверить баланс токенов"),
+        BotCommand("roulette", "🎰 Ежедневная рулетка (1-50 токенов)"),
+        BotCommand("finance", "Зарегистрировать бизнес и получить финплан"),
+        BotCommand("clients", "Найти клиентов"),
+        BotCommand("executors", "Найти исполнителей"),
+        BotCommand("find_similar", "Найти партнёров"),
+        BotCommand("export_history", "Экспорт истории чата в PDF"),
+        BotCommand("add_employee", "Пригласить сотрудника"),
+        BotCommand("employees", "Список сотрудников"),
+        BotCommand("invitations", "Посмотреть приглашения"),
+        BotCommand("accept", "Принять приглашение"),
+        BotCommand("reject", "Отклонить приглашение"),
+        BotCommand("my_businesses", "Мои работодатели"),
+        BotCommand("create_task", "Создать задачу"),
+        BotCommand("available_tasks", "Доступные задачи"),
+        BotCommand("my_tasks", "Мои задачи"),
+        BotCommand("all_tasks", "Все задачи бизнеса"),
+        BotCommand("take_task", "Взять задачу"),
+        BotCommand("assign_task", "Назначить задачу"),
+        BotCommand("complete_task", "Завершить задачу"),
+        BotCommand("abandon_task", "Отказаться от задачи"),
+    ]
+    
+    await application.bot.set_my_commands(commands)
+    logger.info("Bot commands registered successfully")
 async def check_overdue_tasks_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Background job to check and fail overdue tasks"""
     try:
@@ -2893,6 +2992,7 @@ def main() -> None:
         # Register command handlers
         application.add_handler(CommandHandler("start", start_command))
         application.add_handler(CommandHandler("balance", balance_command))
+        application.add_handler(CommandHandler("roulette", roulette_command))
         application.add_handler(CommandHandler("help", help_command))
         application.add_handler(CommandHandler("find_similar", find_similar_command))
         
