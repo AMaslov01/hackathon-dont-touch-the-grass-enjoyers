@@ -51,6 +51,7 @@ class MultilingualEmbedder:
             self.model_name,
             device=self.device,
         )
+    
         
         # Get dimension from model
         self._dimension = self._model.get_sentence_embedding_dimension()

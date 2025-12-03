@@ -5,7 +5,7 @@ Recursive text splitter that respects document structure.
 from typing import List, Dict, Any, Optional
 import re
 
-from .base_chunker import BaseChunker, TextChunk
+from ragBaseMaker.chunking.base_chunker import BaseChunker, TextChunk
 
 
 class RecursiveChunker(BaseChunker):

@@ -5,7 +5,7 @@ Semantic chunker that uses embeddings to find natural split points.
 from typing import List, Dict, Any, Optional, Callable
 import re
 
-from .base_chunker import BaseChunker, TextChunk
+from ragBaseMaker.chunking.base_chunker import BaseChunker, TextChunk
 
 
 class SemanticChunker(BaseChunker):
