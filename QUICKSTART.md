@@ -2,28 +2,34 @@
 
 ## Локальная разработка
 
-### 1. Установить зависимости
+### 1. Создать виртуальное окружение
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+### 2. Установить зависимости
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Проверить конфиг
+### 3. Проверить конфиг
 ```bash
 nano config.env  # Проверить TELEGRAM_BOT_TOKEN и настройки БД
 ```
 
-### 3. Создать базу данных
+### 4. Создать базу данных
 ```bash
 sudo -u postgres psql -c "CREATE DATABASE bot_db;"
 sudo -u postgres psql -d bot_db -f schema.sql
 ```
 
-### 4. Загрузить тестовые данные в RAG
+### 5. Загрузить тестовые данные в RAG
 ```bash
 ./load_documents.sh test_documents
 ```
 
-### 5. Запустить бота
+### 6. Запустить бота
 ```bash
 python bot.py
 ```
@@ -45,8 +51,12 @@ cd ~
 git clone https://github.com/your-repo/hackathon-bot.git
 cd hackathon-bot
 
+# Создать виртуальное окружение
+python3 -m venv venv
+source venv/bin/activate
+
 # Установить зависимости
-pip3 install -r requirements.txt
+pip install -r requirements.txt
 
 # Проверить конфиг (уже настроен)
 nano config.env  # Убедиться что TELEGRAM_BOT_TOKEN и БД настроены
@@ -60,7 +70,7 @@ chmod +x load_documents.sh
 ./load_documents.sh test_documents
 
 # Запустить (модель скачается автоматически при первом запуске)
-python3 bot.py
+python bot.py
 ```
 
 ### Способ 2: SCP (копирование файлов)
@@ -70,10 +80,10 @@ python3 bot.py
 # Создать архив (исключая ненужное)
 tar -czf bot.tar.gz \
   --exclude=rag_data \
+  --exclude=venv \
   --exclude=__pycache__ \
   --exclude=*.pyc \
   --exclude=.git \
-  --exclude=config.env \
   .
 
 # Отправить на сервер
@@ -85,7 +95,12 @@ cd ~
 tar -xzf bot.tar.gz
 cd hackathon-dont-touch-the-grass-enjoyers
 
-# Дальше как в Способе 1 (установить зависимости, создать БД и т.д.)
+# Создать venv и установить зависимости
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# Дальше создать БД, загрузить данные в RAG, запустить
 ```
 
 ### Способ 3: rsync (синхронизация)
@@ -93,13 +108,13 @@ cd hackathon-dont-touch-the-grass-enjoyers
 ```bash
 # На локальной машине
 rsync -avz --exclude 'rag_data' \
+           --exclude 'venv' \
            --exclude '__pycache__' \
            --exclude '*.pyc' \
            --exclude '.git' \
-           --exclude 'config.env' \
            ./ user@your-server.com:~/hackathon-bot/
 
-# На сервере - как в Способе 1
+# На сервере - создать venv и дальше как в Способе 1
 ```
 
 ---
@@ -215,8 +230,9 @@ AI_MODEL=z-ai/glm-4.5-air:free
 
 ### RAG не работает
 ```bash
-python3 -c "from ragBaseMaker.rag_system import RAGSystem; print('OK')"
-python3 rag_tools/manage_rag.py --stats
+source venv/bin/activate
+python -c "from ragBaseMaker.rag_system import RAGSystem; print('OK')"
+python rag_tools/manage_rag.py --stats
 ```
 
 ### БД не подключается
@@ -228,10 +244,11 @@ psql -U postgres -d bot_db -c "SELECT 1;"
 ### Бот не запускается
 ```bash
 # Проверить конфиг
-python3 -c "from config import Config; Config.validate()"
+source venv/bin/activate
+python -c "from config import Config; Config.validate()"
 
 # Посмотреть логи
-python3 bot.py
+python bot.py
 ```
 
 ---

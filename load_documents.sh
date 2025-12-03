@@ -7,7 +7,6 @@ if [ $# -eq 0 ]; then
     echo "Примеры:"
     echo "  ./load_documents.sh test_documents"
     echo "  ./load_documents.sh /path/to/docs"
-    echo "  ./load_documents.sh document.pdf"
     exit 1
 fi
 

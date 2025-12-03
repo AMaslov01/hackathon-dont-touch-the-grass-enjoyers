@@ -12,10 +12,10 @@ from typing import List, Dict, Any, Optional
 from pathlib import Path
 import json
 
-from .parsers import UniversalParser, ParsedDocument
-from .chunking import RecursiveChunker, TextChunk
-from .embeddings import MultilingualEmbedder
-from .vectordb import ChromaVectorDB, FAISSVectorDB, SearchResult
+from ragBaseMaker.parsers import UniversalParser, ParsedDocument
+from ragBaseMaker.chunking import RecursiveChunker, TextChunk
+from ragBaseMaker.embeddings import MultilingualEmbedder
+from ragBaseMaker.vectordb import ChromaVectorDB, FAISSVectorDB, SearchResult
 
 
 class RAGSystem:
