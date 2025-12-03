@@ -1049,10 +1049,25 @@ class BusinessRepository:
             self.db.return_connection(conn)
 
     def remove_employee(self, business_id: int, user_id: int) -> bool:
-        """Remove an employee from a business"""
+        """Remove an employee from a business and free their tasks"""
         conn = self.db.get_connection()
         try:
             with conn.cursor() as cursor:
+                # First, free all tasks assigned to this employee
+                cursor.execute("""
+                    UPDATE tasks 
+                    SET status = 'available',
+                        assigned_to = NULL,
+                        assigned_at = NULL
+                    WHERE business_id = %s 
+                    AND assigned_to = %s 
+                    AND status IN ('assigned', 'in_progress')
+                    RETURNING id
+                """, (business_id, user_id))
+                freed_tasks = cursor.fetchall()
+                freed_task_ids = [row[0] for row in freed_tasks] if freed_tasks else []
+                
+                # Then delete the employee
                 cursor.execute("""
                     DELETE FROM employees 
                     WHERE business_id = %s AND user_id = %s
@@ -1060,8 +1075,12 @@ class BusinessRepository:
                 """, (business_id, user_id))
                 result = cursor.fetchone()
                 conn.commit()
+                
                 if result:
-                    logger.info(f"Removed employee {user_id} from business {business_id}")
+                    if freed_task_ids:
+                        logger.info(f"Removed employee {user_id} from business {business_id} and freed tasks: {freed_task_ids}")
+                    else:
+                        logger.info(f"Removed employee {user_id} from business {business_id} (no active tasks)")
                     return True
                 else:
                     logger.warning(f"Employee {user_id} not found in business {business_id}")
@@ -1663,10 +1682,25 @@ class BusinessRepository:
             self.db.return_connection(conn)
 
     def abandon_task(self, task_id: int, user_id: int) -> bool:
-        """Employee abandons a taken task - меняет статус на 'abandoned'"""
+        """Employee abandons a taken task - меняет статус на 'abandoned' и уменьшает рейтинг на 20"""
         conn = self.db.get_connection()
         try:
             with conn.cursor() as cursor:
+                # First, get the business_id from the task
+                cursor.execute("""
+                    SELECT business_id FROM tasks 
+                    WHERE id = %s AND assigned_to = %s 
+                    AND status IN ('assigned', 'in_progress')
+                """, (task_id, user_id))
+                task_data = cursor.fetchone()
+                
+                if not task_data:
+                    logger.warning(f"Task {task_id} cannot be abandoned by user {user_id}")
+                    return False
+                
+                business_id = task_data[0]
+                
+                # Update task status
                 cursor.execute("""
                     UPDATE tasks 
                     SET status = 'abandoned',
@@ -1677,16 +1711,25 @@ class BusinessRepository:
                     RETURNING id
                 """, (user_id, task_id, user_id))
                 result = cursor.fetchone()
+                
                 if result:
+                    # Update user's abandonment count
                     cursor.execute("""
                         UPDATE users 
                         SET abandonments_count = COALESCE(abandonments_count, 0) + 1,
                             updated_at = CURRENT_TIMESTAMP
                         WHERE user_id = %s
                     """, (user_id,))
-                conn.commit()
-                if result:
-                    logger.info(f"Task {task_id} abandoned by user {user_id}")
+                    
+                    # Decrease employee rating by 20 points
+                    cursor.execute("""
+                        UPDATE employees 
+                        SET rating = GREATEST(0, rating - 20)
+                        WHERE business_id = %s AND user_id = %s AND status = 'accepted'
+                    """, (business_id, user_id))
+                    
+                    conn.commit()
+                    logger.info(f"Task {task_id} abandoned by user {user_id}, rating decreased by 20")
                     return True
                 else:
                     logger.warning(f"Task {task_id} cannot be abandoned by user {user_id}")
