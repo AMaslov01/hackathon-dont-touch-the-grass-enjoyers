@@ -415,7 +415,8 @@ class UserManager:
     # Task management methods
 
     def create_task_with_ai_recommendation(self, owner_id: int, title: str,
-                                           description: str) -> tuple[bool, str, Optional[dict]]:
+                                           description: str, deadline_minutes: int = None,
+                                           difficulty: int = None, priority: str = None) -> tuple[bool, str, Optional[dict]]:
         """
         Create a task and get AI recommendation for best employee
         
@@ -423,6 +424,9 @@ class UserManager:
             owner_id: Business owner user ID
             title: Task title
             description: Task description
+            deadline_minutes: Deadline in minutes
+            difficulty: Task difficulty (1-5)
+            priority: Task priority (низкий, средний, высокий)
             
         Returns:
             Tuple of (success, message, task_dict or None)
@@ -458,6 +462,9 @@ class UserManager:
                 title=title,
                 description=description,
                 created_by=owner_id,
+                deadline_minutes=deadline_minutes,
+                difficulty=difficulty,
+                priority=priority,
                 ai_recommended_employee=recommended_employee_id
             )
             return True, "Задача создана", {
@@ -559,12 +566,12 @@ class UserManager:
         return success, message, employee_user_id if success else None
 
     def complete_task(self, user_id: int, task_id: int) -> tuple[bool, str]:
-        """Employee completes a task"""
+        """Employee submits a task for review"""
         success = business_repo.complete_task(task_id, user_id)
         if success:
-            return True, "Задача выполнена!"
+            return True, "Задача отправлена на проверку работодателю!"
         else:
-            return False, "Не удалось завершить задачу. Возможно, она не назначена вам."
+            return False, "Не удалось отправить задачу. Возможно, она не назначена вам."
 
     def get_business_all_tasks(self, owner_id: int) -> list:
         """Owner gets all tasks of their business"""
@@ -598,6 +605,153 @@ class UserManager:
             return True, "Вы отказались от задачи. Задача переведена в статус 'отказана'."
         else:
             return False, "Не удалось отказаться от задачи"
+    
+    # Task review methods (for business owners)
+    
+    def get_submitted_tasks(self, owner_id: int) -> list:
+        """Get all tasks submitted for review"""
+        business = business_repo.get_business(owner_id)
+        if not business:
+            return []
+        return business_repo.get_submitted_tasks(business['id'])
+    
+    def accept_task(self, owner_id: int, task_id: int, quality_coefficient: float) -> tuple[bool, str, Optional[dict]]:
+        """
+        Accept submitted task with quality rating
+        
+        Args:
+            owner_id: Business owner user ID
+            task_id: Task ID
+            quality_coefficient: Quality rating from 0.5 to 1.0
+            
+        Returns:
+            Tuple of (success, message, result_dict)
+        """
+        # Validate quality coefficient
+        if not (0.5 <= quality_coefficient <= 1.0):
+            return False, "Коэффициент качества должен быть от 0.5 до 1.0", None
+        
+        # Check if user is business owner
+        business = business_repo.get_business(owner_id)
+        if not business:
+            return False, "У вас нет бизнеса", None
+        
+        # Check if task belongs to this business
+        task = business_repo.get_task(task_id)
+        if not task:
+            return False, "Задача не найдена", None
+        
+        if task['business_id'] != business['id']:
+            return False, "Эта задача не принадлежит вашему бизнесу", None
+        
+        if task['status'] != 'submitted':
+            return False, "Задача не отправлена на проверку", None
+        
+        # Accept task
+        result = business_repo.accept_task(task_id, quality_coefficient, business['id'])
+        if result:
+            employee_username = task.get('assigned_to_username')
+            if employee_username:
+                employee_name = f"@{employee_username}"
+            else:
+                employee_name = task.get('assigned_to_name', f"ID {result['employee_id']}")
+            return True, (
+                f"Задача принята!\n"
+                f"Сотрудник: {employee_name}\n"
+                f"Изменение рейтинга: +{result['rating_change']}\n"
+                f"Новый рейтинг: {result['new_rating']}"
+            ), result
+        else:
+            return False, "Не удалось принять задачу", None
+    
+    def reject_task(self, owner_id: int, task_id: int) -> tuple[bool, str]:
+        """
+        Reject submitted task and apply rating penalty
+        
+        Args:
+            owner_id: Business owner user ID
+            task_id: Task ID
+            
+        Returns:
+            Tuple of (success, message)
+        """
+        # Check if user is business owner
+        business = business_repo.get_business(owner_id)
+        if not business:
+            return False, "У вас нет бизнеса"
+        
+        # Check if task belongs to this business
+        task = business_repo.get_task(task_id)
+        if not task:
+            return False, "Задача не найдена"
+        
+        if task['business_id'] != business['id']:
+            return False, "Эта задача не принадлежит вашему бизнесу"
+        
+        if task['status'] != 'submitted':
+            return False, "Задача не отправлена на проверку"
+        
+        # Reject task
+        success = business_repo.reject_task(task_id, business['id'])
+        if success:
+            employee_username = task.get('assigned_to_username')
+            if employee_username:
+                employee_name = f"@{employee_username}"
+            else:
+                employee_name = task.get('assigned_to_name', f"ID {task['assigned_to']}")
+            return True, f"Задача отклонена. Сотрудник {employee_name} получил штраф -20 рейтинга. Задача возвращена в пул."
+        else:
+            return False, "Не удалось отклонить задачу"
+    
+    def send_task_for_revision(self, owner_id: int, task_id: int, new_deadline_minutes: int) -> tuple[bool, str]:
+        """
+        Send task back for revision with new deadline
+        
+        Args:
+            owner_id: Business owner user ID
+            task_id: Task ID
+            new_deadline_minutes: New deadline in minutes
+            
+        Returns:
+            Tuple of (success, message)
+        """
+        if new_deadline_minutes <= 0:
+            return False, "Дедлайн должен быть положительным числом"
+        
+        # Check if user is business owner
+        business = business_repo.get_business(owner_id)
+        if not business:
+            return False, "У вас нет бизнеса"
+        
+        # Check if task belongs to this business
+        task = business_repo.get_task(task_id)
+        if not task:
+            return False, "Задача не найдена"
+        
+        if task['business_id'] != business['id']:
+            return False, "Эта задача не принадлежит вашему бизнесу"
+        
+        if task['status'] != 'submitted':
+            return False, "Задача не отправлена на проверку"
+        
+        # Send for revision
+        success = business_repo.send_for_revision(task_id, new_deadline_minutes, business['id'])
+        if success:
+            employee_username = task.get('assigned_to_username')
+            if employee_username:
+                employee_name = f"@{employee_username}"
+            else:
+                employee_name = task.get('assigned_to_name', f"ID {task['assigned_to']}")
+            return True, f"Задача отправлена на доработку сотруднику {employee_name}. Новый дедлайн: {new_deadline_minutes} мин."
+        else:
+            return False, "Не удалось отправить задачу на доработку"
+    
+    def get_employee_rating(self, owner_id: int, employee_user_id: int) -> Optional[int]:
+        """Get employee rating in owner's business"""
+        business = business_repo.get_business(owner_id)
+        if not business:
+            return None
+        return business_repo.get_employee_rating(business['id'], employee_user_id)
 
     # Roulette methods
     
