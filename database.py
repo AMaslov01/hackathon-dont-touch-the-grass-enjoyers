@@ -104,6 +104,8 @@ class Database:
                         tokens INTEGER NOT NULL DEFAULT 0,
                         max_tokens INTEGER NOT NULL DEFAULT 100,
                         last_token_refresh TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        last_roulette_spin TIMESTAMP,
+                        roulette_notified BOOLEAN DEFAULT FALSE,
                         workers_info TEXT,
                         executors_info TEXT,
                         completed_tasks INTEGER DEFAULT 0,
@@ -287,6 +289,28 @@ class Database:
                     END $$;
                 """)
                 
+                # Migration 3: Add roulette fields to users table
+                cursor.execute("""
+                    DO $$
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns 
+                            WHERE table_name='users' AND column_name='last_roulette_spin'
+                        ) THEN
+                            ALTER TABLE users ADD COLUMN last_roulette_spin TIMESTAMP;
+                            RAISE NOTICE 'Added last_roulette_spin column to users table';
+                        END IF;
+                        
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns 
+                            WHERE table_name='users' AND column_name='roulette_notified'
+                        ) THEN
+                            ALTER TABLE users ADD COLUMN roulette_notified BOOLEAN DEFAULT FALSE;
+                            RAISE NOTICE 'Added roulette_notified column to users table';
+                        END IF;
+                    END $$;
+                """)
+                
                 conn.commit()
                 logger.info("Database migrations completed successfully")
         except Exception as e:
@@ -396,13 +420,13 @@ class UserRepository:
             self.db.return_connection(conn)
 
     def refresh_tokens(self, user_id: int) -> dict:
-        """Refresh user tokens if time has passed"""
+        """Refresh user tokens if time has passed - adds daily_refresh_amount"""
         conn = self.db.get_connection()
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 # Check if refresh is needed
                 cursor.execute("""
-                    SELECT user_id, last_token_refresh, max_tokens
+                    SELECT user_id, last_token_refresh, tokens, max_tokens
                     FROM users 
                     WHERE user_id = %s
                     AND last_token_refresh < %s
@@ -411,19 +435,23 @@ class UserRepository:
                     datetime.now() - timedelta(hours=TOKEN_CONFIG['refresh_interval_hours'])
                 ))
 
-                if cursor.fetchone():
-                    # Refresh tokens
+                result = cursor.fetchone()
+                if result:
+                    # Add daily refresh amount (don't exceed max)
+                    daily_amount = TOKEN_CONFIG.get('daily_refresh_amount', 10)
+                    new_tokens = min(result['tokens'] + daily_amount, result['max_tokens'])
+                    
                     cursor.execute("""
                         UPDATE users 
-                        SET tokens = max_tokens, 
+                        SET tokens = %s, 
                             last_token_refresh = CURRENT_TIMESTAMP,
                             updated_at = CURRENT_TIMESTAMP
                         WHERE user_id = %s
                         RETURNING *
-                    """, (user_id,))
+                    """, (new_tokens, user_id))
                     conn.commit()
                     result = cursor.fetchone()
-                    logger.info(f"Refreshed tokens for user {user_id}")
+                    logger.info(f"Refreshed tokens for user {user_id}: +{daily_amount} tokens")
                     return dict(result)
                 else:
                     return self.get_user(user_id)
@@ -548,6 +576,113 @@ class UserRepository:
         finally:
             self.db.return_connection(conn)
 
+    def spin_roulette(self, user_id: int, amount: int) -> bool:
+        """Give user roulette tokens and update last spin time"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute("""
+                    UPDATE users 
+                    SET tokens = LEAST(tokens + %s, max_tokens),
+                        last_roulette_spin = CURRENT_TIMESTAMP,
+                        roulette_notified = FALSE,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE user_id = %s
+                    RETURNING tokens, max_tokens
+                """, (amount, user_id))
+                result = cursor.fetchone()
+                conn.commit()
+                if result:
+                    logger.info(f"User {user_id} won {amount} tokens from roulette, new balance: {result['tokens']}")
+                    return True
+                return False
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to spin roulette for user {user_id}: {e}")
+            return False
+        finally:
+            self.db.return_connection(conn)
+    
+    def can_spin_roulette(self, user_id: int) -> tuple[bool, Optional[datetime]]:
+        """Check if user can spin roulette and return next available time"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute("""
+                    SELECT last_roulette_spin
+                    FROM users 
+                    WHERE user_id = %s
+                """, (user_id,))
+                result = cursor.fetchone()
+                
+                if not result or result['last_roulette_spin'] is None:
+                    return True, None
+                
+                last_spin = result['last_roulette_spin']
+                time_since_last = datetime.now() - last_spin
+                hours_passed = time_since_last.total_seconds() / 3600
+                
+                if hours_passed >= TOKEN_CONFIG['roulette_interval_hours']:
+                    return True, None
+                else:
+                    next_spin = last_spin + timedelta(hours=TOKEN_CONFIG['roulette_interval_hours'])
+                    return False, next_spin
+        finally:
+            self.db.return_connection(conn)
+    
+    def mark_roulette_notified(self, user_id: int) -> bool:
+        """Mark that user has been notified about available roulette"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE users 
+                    SET roulette_notified = TRUE,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE user_id = %s
+                """, (user_id,))
+                conn.commit()
+                return True
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to mark roulette notified for user {user_id}: {e}")
+            return False
+        finally:
+            self.db.return_connection(conn)
+    
+    def check_roulette_notification_needed(self, user_id: int) -> bool:
+        """Check if user needs to be notified about available roulette"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute("""
+                    SELECT last_roulette_spin, roulette_notified
+                    FROM users 
+                    WHERE user_id = %s
+                """, (user_id,))
+                result = cursor.fetchone()
+                
+                if not result:
+                    return False
+                
+                # If never spun, no need to notify
+                if result['last_roulette_spin'] is None:
+                    return False
+                
+                # If already notified, no need to notify again
+                if result['roulette_notified']:
+                    return False
+                
+                # Check if roulette is available
+                last_spin = result['last_roulette_spin']
+                time_since_last = datetime.now() - last_spin
+                hours_passed = time_since_last.total_seconds() / 3600
+                
+                # If available and not notified, should notify
+                return hours_passed >= TOKEN_CONFIG['roulette_interval_hours']
+        finally:
+            self.db.return_connection(conn)
+    
     def get_all_users_with_business_info(self, exclude_user_id: int = None) -> list:
         """Get all users who have business info (from businesses table)"""
         conn = self.db.get_connection()

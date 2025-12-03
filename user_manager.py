@@ -599,6 +599,72 @@ class UserManager:
         else:
             return False, "Не удалось отказаться от задачи"
 
+    # Roulette methods
+    
+    def spin_roulette(self, user_id: int) -> tuple[bool, str, Optional[dict]]:
+        """
+        Spin the roulette and get random tokens
+        
+        Returns:
+            Tuple of (success, message, result_dict)
+            result_dict contains: amount, new_balance, next_spin
+        """
+        import random
+        from constants import TOKEN_CONFIG
+        
+        # Check if user can spin
+        can_spin, next_spin = user_repo.can_spin_roulette(user_id)
+        
+        if not can_spin:
+            # Format next spin time
+            time_left = next_spin - datetime.now()
+            hours_left = int(time_left.total_seconds() // 3600)
+            minutes_left = int((time_left.total_seconds() % 3600) // 60)
+            
+            if hours_left > 0:
+                time_str = f"{hours_left} ч {minutes_left} мин"
+            else:
+                time_str = f"{minutes_left} мин"
+            
+            user = user_repo.get_user(user_id)
+            return False, f"Рулетка будет доступна через {time_str}", {
+                'tokens': user['tokens'] if user else 0,
+                'next_spin': next_spin.strftime(TIME_FORMAT)
+            }
+        
+        # Spin the roulette
+        min_amount = TOKEN_CONFIG['roulette_min']
+        max_amount = TOKEN_CONFIG['roulette_max']
+        amount = random.randint(min_amount, max_amount)
+        
+        # Give tokens to user
+        success = user_repo.spin_roulette(user_id, amount)
+        
+        if success:
+            user = user_repo.get_user(user_id)
+            next_spin_time = datetime.now() + timedelta(hours=TOKEN_CONFIG['roulette_interval_hours'])
+            
+            return True, f"Вы выиграли {amount} токенов!", {
+                'amount': amount,
+                'new_balance': user['tokens'] if user else amount,
+                'next_spin': next_spin_time.strftime(TIME_FORMAT)
+            }
+        else:
+            return False, "Ошибка при вращении рулетки", None
+    
+    def check_and_notify_roulette(self, user_id: int) -> bool:
+        """
+        Check if user needs to be notified about available roulette
+        
+        Returns:
+            True if notification is needed, False otherwise
+        """
+        return user_repo.check_roulette_notification_needed(user_id)
+    
+    def mark_roulette_notified(self, user_id: int) -> bool:
+        """Mark that user has been notified about roulette"""
+        return user_repo.mark_roulette_notified(user_id)
+
 
 # Global user manager instance
 user_manager = UserManager()
