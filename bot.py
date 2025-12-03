@@ -85,6 +85,7 @@ ASSIGN_TASK_ID, ASSIGN_TASK_USERNAME = range(18, 20)
 COMPLETE_TASK_ID = range(20, 21)
 ABANDON_TASK_ID = range(21, 22)
 REVIEW_TASK_ID, REVIEW_TASK_DECISION = range(22, 24)
+FIRE_EMPLOYEE_USERNAME = range(24, 25)
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1169,6 +1170,122 @@ async def add_employee_process(update: Update, context: ContextTypes.DEFAULT_TYP
 async def add_employee_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel add employee conversation"""
     await update.message.reply_text("❌ Приглашение сотрудника отменено")
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
+async def fire_employee_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Start the fire_employee conversation"""
+    user_id = update.effective_user.id
+    
+    try:
+        # Check if user has a business
+        if not user_manager.is_business_owner(user_id):
+            await update.message.reply_text(
+                MESSAGES['employee_no_business'],
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
+        
+        # Get employees list
+        business = user_manager.get_business(user_id)
+        all_employees = user_manager.get_all_employees(business['id'])
+        accepted = [e for e in all_employees if e['status'] == 'accepted']
+        
+        if not accepted:
+            await update.message.reply_text(
+                "У вас нет сотрудников, которых можно уволить.",
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
+        
+        # Format employees list
+        employees_text = "👥 *Ваши сотрудники:*\n\n"
+        for emp in accepted:
+            username = f"@{emp['username']}" if emp['username'] else emp['first_name']
+            escaped_username = escape_markdown(username)
+            rating = emp.get('rating', 500)
+            employees_text += f"  • {escaped_username} ⭐ {rating}\n"
+        
+        employees_text += "\n⚠️ Пожалуйста, укажите username сотрудника, которого хотите уволить:\n\n"
+        employees_text += "Например: `@username` или `username`\n\n"
+        employees_text += "❗️ *Внимание:* Все активные задачи этого сотрудника станут доступными для других."
+        
+        await update.message.reply_text(employees_text, parse_mode='Markdown')
+        return FIRE_EMPLOYEE_USERNAME
+        
+    except Exception as e:
+        logger.error(f"Error in fire_employee_start for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+        return ConversationHandler.END
+
+
+async def fire_employee_username_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle username input for fire_employee"""
+    target_username = update.message.text.lstrip('@').strip()
+    context.user_data['target_username'] = target_username
+    return await fire_employee_process(update, context)
+
+
+async def fire_employee_process(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Process the employee removal"""
+    user_id = update.effective_user.id
+    target_username = context.user_data.get('target_username')
+    
+    try:
+        # Get target user
+        target_user_id = user_manager.get_user_by_username(target_username)
+        if not target_user_id:
+            await update.message.reply_text(
+                f"❌ Пользователь @{target_username} не найден.",
+                parse_mode='Markdown'
+            )
+            context.user_data.clear()
+            return ConversationHandler.END
+        
+        # Remove employee
+        success, message = user_manager.remove_employee(user_id, target_user_id)
+        
+        if success:
+            escaped_username = escape_markdown(f"@{target_username}")
+            await update.message.reply_text(
+                f"✅ Сотрудник {escaped_username} уволен.\n\n"
+                f"Все его активные задачи были освобождены и доступны для назначения другим сотрудникам.",
+                parse_mode='Markdown'
+            )
+            
+            # Notify the fired employee
+            try:
+                business = user_manager.get_business(user_id)
+                if business:
+                    escaped_business_name = escape_markdown(business['business_name'])
+                    await context.bot.send_message(
+                        chat_id=target_user_id,
+                        text=f"⚠️ Вы были уволены из бизнеса *{escaped_business_name}*.\n\n"
+                             f"Все ваши задачи в этом бизнесе были освобождены.",
+                        parse_mode='Markdown'
+                    )
+            except Exception as e:
+                logger.error(f"Failed to notify fired employee {target_user_id}: {e}")
+        else:
+            escaped_message = escape_markdown(message)
+            await update.message.reply_text(f"❌ {escaped_message}", parse_mode='Markdown')
+        
+        logger.info(f"User {user_id} tried to fire {target_username}: {success}")
+        
+    except Exception as e:
+        logger.error(f"Error in fire_employee_process for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+    
+    finally:
+        context.user_data.clear()
+    
+    return ConversationHandler.END
+
+
+async def fire_employee_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancel fire employee conversation"""
+    await update.message.reply_text("❌ Увольнение сотрудника отменено")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -3044,6 +3161,7 @@ async def setup_bot_commands(application):
         BotCommand("find_similar", "Найти партнёров"),
         BotCommand("export_history", "Экспорт истории чата в PDF"),
         BotCommand("add_employee", "Пригласить сотрудника"),
+        BotCommand("fire_employee", "Уволить сотрудника"),
         BotCommand("employees", "Список сотрудников"),
         BotCommand("invitations", "Посмотреть приглашения"),
         BotCommand("accept", "Принять приглашение"),
@@ -3122,6 +3240,17 @@ def main() -> None:
             fallbacks=[CommandHandler("cancel", add_employee_cancel)],
         )
         application.add_handler(add_employee_handler)
+
+        fire_employee_handler = ConversationHandler(
+            entry_points=[CommandHandler("fire_employee", fire_employee_start)],
+            states={
+                FIRE_EMPLOYEE_USERNAME: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, fire_employee_username_handler)
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", fire_employee_cancel)],
+        )
+        application.add_handler(fire_employee_handler)
 
         accept_invitation_handler = ConversationHandler(
             entry_points=[CommandHandler("accept", accept_invitation_start)],
