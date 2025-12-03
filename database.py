@@ -169,6 +169,11 @@ class Database:
                         ai_recommended_employee BIGINT REFERENCES users(user_id),
                         abandoned_by BIGINT REFERENCES users(user_id),
                         abandoned_at TIMESTAMP,
+                        deadline_minutes INTEGER,
+                        difficulty INTEGER CHECK (difficulty >= 1 AND difficulty <= 5),
+                        priority VARCHAR(20),
+                        submitted_at TIMESTAMP,
+                        quality_coefficient NUMERIC(3, 2) CHECK (quality_coefficient >= 0.5 AND quality_coefficient <= 1.0),
                         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         assigned_at TIMESTAMP,
                         completed_at TIMESTAMP
@@ -307,6 +312,52 @@ class Database:
                         ) THEN
                             ALTER TABLE users ADD COLUMN roulette_notified BOOLEAN DEFAULT FALSE;
                             RAISE NOTICE 'Added roulette_notified column to users table';
+                        END IF;
+                    END $$;
+                """)
+                
+                # Migration 4: Add rating system fields to tasks table
+                cursor.execute("""
+                    DO $$
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns 
+                            WHERE table_name='tasks' AND column_name='deadline_minutes'
+                        ) THEN
+                            ALTER TABLE tasks ADD COLUMN deadline_minutes INTEGER;
+                            RAISE NOTICE 'Added deadline_minutes column to tasks table';
+                        END IF;
+                        
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns 
+                            WHERE table_name='tasks' AND column_name='difficulty'
+                        ) THEN
+                            ALTER TABLE tasks ADD COLUMN difficulty INTEGER CHECK (difficulty >= 1 AND difficulty <= 5);
+                            RAISE NOTICE 'Added difficulty column to tasks table';
+                        END IF;
+                        
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns 
+                            WHERE table_name='tasks' AND column_name='priority'
+                        ) THEN
+                            ALTER TABLE tasks ADD COLUMN priority VARCHAR(20);
+                            RAISE NOTICE 'Added priority column to tasks table';
+                        END IF;
+                        
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns 
+                            WHERE table_name='tasks' AND column_name='submitted_at'
+                        ) THEN
+                            ALTER TABLE tasks ADD COLUMN submitted_at TIMESTAMP;
+                            RAISE NOTICE 'Added submitted_at column to tasks table';
+                        END IF;
+                        
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns 
+                            WHERE table_name='tasks' AND column_name='quality_coefficient'
+                        ) THEN
+                            ALTER TABLE tasks ADD COLUMN quality_coefficient NUMERIC(3, 2) CHECK (quality_coefficient >= 0.5 AND quality_coefficient <= 1.0);
+                            RAISE NOTICE 'Added quality_coefficient column to tasks table';
                         END IF;
                     END $$;
                 """)
@@ -915,7 +966,7 @@ class BusinessRepository:
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute("""
-                    SELECT e.id, e.user_id, e.status, e.invited_at, e.responded_at,
+                    SELECT e.id, e.user_id, e.status, e.rating, e.invited_at, e.responded_at,
                            u.username, u.first_name, u.last_name
                     FROM employees e
                     JOIN users u ON e.user_id = u.user_id
@@ -936,7 +987,7 @@ class BusinessRepository:
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute("""
-                    SELECT e.id, e.user_id, e.status, e.invited_at, e.responded_at,
+                    SELECT e.id, e.user_id, e.status, e.rating, e.invited_at, e.responded_at,
                            u.username, u.first_name, u.last_name
                     FROM employees e
                     JOIN users u ON e.user_id = u.user_id
@@ -1079,20 +1130,24 @@ class BusinessRepository:
     # Task management methods
 
     def create_task(self, business_id: int, title: str, description: str,
-                   created_by: int, ai_recommended_employee: int = None) -> dict:
-        """Create a new task"""
+                   created_by: int, deadline_minutes: int = None, 
+                   difficulty: int = None, priority: str = None,
+                   ai_recommended_employee: int = None) -> dict:
+        """Create a new task with deadline, difficulty, and priority"""
         conn = self.db.get_connection()
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute("""
                     INSERT INTO tasks (business_id, title, description, created_by, 
+                                     deadline_minutes, difficulty, priority,
                                      ai_recommended_employee, status)
-                    VALUES (%s, %s, %s, %s, %s, 'available')
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'available')
                     RETURNING *
-                """, (business_id, title, description, created_by, ai_recommended_employee))
+                """, (business_id, title, description, created_by, 
+                      deadline_minutes, difficulty, priority, ai_recommended_employee))
                 conn.commit()
                 result = cursor.fetchone()
-                logger.info(f"Created task {result['id']} for business {business_id}")
+                logger.info(f"Created task {result['id']} for business {business_id} with deadline {deadline_minutes} min, difficulty {difficulty}, priority {priority}")
                 return dict(result)
         except Exception as e:
             conn.rollback()
@@ -1250,37 +1305,286 @@ class BusinessRepository:
         return self.assign_task(task_id, user_id, user_id)
 
     def complete_task(self, task_id: int, user_id: int) -> bool:
-        """Mark task as completed"""
+        """Mark task as submitted for review (not auto-completed anymore)"""
         conn = self.db.get_connection()
         try:
             with conn.cursor() as cursor:
                 cursor.execute("""
                     UPDATE tasks 
-                    SET status = 'completed',
-                        completed_at = CURRENT_TIMESTAMP
+                    SET status = 'submitted',
+                        submitted_at = CURRENT_TIMESTAMP
                     WHERE id = %s AND assigned_to = %s 
                     AND status IN ('assigned', 'in_progress')
                     RETURNING id
                 """, (task_id, user_id))
                 result = cursor.fetchone()
+                conn.commit()
                 if result:
-                    cursor.execute("""
+                    logger.info(f"Task {task_id} submitted for review by user {user_id}")
+                    return True
+                else:
+                    logger.warning(f"Task {task_id} cannot be submitted by user {user_id}")
+                    return False
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to submit task: {e}")
+            return False
+        finally:
+            self.db.return_connection(conn)
+
+    def accept_task(self, task_id: int, quality_coefficient: float, business_id: int) -> Optional[dict]:
+        """Accept submitted task and calculate rating for employee"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                # Get task details
+                cursor.execute("""
+                    SELECT t.*, e.rating 
+                    FROM tasks t
+                    JOIN employees e ON e.user_id = t.assigned_to AND e.business_id = t.business_id
+                    WHERE t.id = %s AND t.business_id = %s AND t.status = 'submitted'
+                """, (task_id, business_id))
+                task = cursor.fetchone()
+                
+                if not task:
+                    logger.warning(f"Task {task_id} not found or not in submitted status")
+                    return None
+                
+                # Calculate rating
+                rating_change = self._calculate_rating(
+                    difficulty=task['difficulty'],
+                    assigned_at=task['assigned_at'],
+                    completed_at=datetime.now(),
+                    deadline_minutes=task['deadline_minutes'],
+                    priority=task['priority'],
+                    quality_coefficient=quality_coefficient
+                )
+                
+                # Update task status
+                cursor.execute("""
+                    UPDATE tasks 
+                    SET status = 'completed',
+                        completed_at = CURRENT_TIMESTAMP,
+                        quality_coefficient = %s
+                    WHERE id = %s
+                    RETURNING *
+                """, (quality_coefficient, task_id))
+                updated_task = cursor.fetchone()
+                
+                # Update employee rating
+                cursor.execute("""
+                    UPDATE employees 
+                    SET rating = GREATEST(0, LEAST(1000, rating + %s))
+                    WHERE business_id = %s AND user_id = %s
+                    RETURNING rating
+                """, (rating_change, business_id, task['assigned_to']))
+                new_rating_result = cursor.fetchone()
+                
+                # Update user completed tasks count
+                cursor.execute("""
                     UPDATE users 
                     SET completed_tasks = COALESCE(completed_tasks, 0) + 1,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE user_id = %s
-                    """, (user_id,))
+                """, (task['assigned_to'],))
+                
                 conn.commit()
+                
+                logger.info(f"Task {task_id} accepted with quality {quality_coefficient}, rating change: {rating_change}")
+                
+                return {
+                    'task': dict(updated_task) if updated_task else None,
+                    'rating_change': rating_change,
+                    'new_rating': new_rating_result['rating'] if new_rating_result else None,
+                    'employee_id': task['assigned_to']
+                }
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to accept task: {e}")
+            return None
+        finally:
+            self.db.return_connection(conn)
+    
+    def reject_task(self, task_id: int, business_id: int) -> bool:
+        """Reject submitted task and return to available pool with rating penalty"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor() as cursor:
+                # Get task details
+                cursor.execute("""
+                    SELECT assigned_to FROM tasks
+                    WHERE id = %s AND business_id = %s AND status = 'submitted'
+                """, (task_id, business_id))
+                task = cursor.fetchone()
+                
+                if not task:
+                    logger.warning(f"Task {task_id} not found or not in submitted status")
+                    return False
+                
+                employee_id = task[0]
+                
+                # Update task - return to available pool
+                cursor.execute("""
+                    UPDATE tasks 
+                    SET status = 'available',
+                        assigned_to = NULL,
+                        assigned_at = NULL,
+                        submitted_at = NULL
+                    WHERE id = %s
+                """, (task_id,))
+                
+                # Apply rating penalty
+                cursor.execute("""
+                    UPDATE employees 
+                    SET rating = GREATEST(0, rating - 20)
+                    WHERE business_id = %s AND user_id = %s
+                    RETURNING rating
+                """, (business_id, employee_id))
+                
+                conn.commit()
+                logger.info(f"Task {task_id} rejected, employee {employee_id} penalized -20 rating")
+                return True
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to reject task: {e}")
+            return False
+        finally:
+            self.db.return_connection(conn)
+    
+    def send_for_revision(self, task_id: int, new_deadline_minutes: int, business_id: int) -> bool:
+        """Send task back for revision with new deadline"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor() as cursor:
+                # Update task with new deadline and status
+                cursor.execute("""
+                    UPDATE tasks 
+                    SET status = 'in_progress',
+                        deadline_minutes = %s,
+                        submitted_at = NULL,
+                        assigned_at = CURRENT_TIMESTAMP
+                    WHERE id = %s AND business_id = %s AND status = 'submitted'
+                    RETURNING id
+                """, (new_deadline_minutes, task_id, business_id))
+                result = cursor.fetchone()
+                conn.commit()
+                
                 if result:
-                    logger.info(f"Task {task_id} completed by user {user_id}")
+                    logger.info(f"Task {task_id} sent for revision with new deadline {new_deadline_minutes} minutes")
                     return True
                 else:
-                    logger.warning(f"Task {task_id} cannot be completed by user {user_id}")
+                    logger.warning(f"Task {task_id} not found or not in submitted status")
                     return False
         except Exception as e:
             conn.rollback()
-            logger.error(f"Failed to complete task: {e}")
+            logger.error(f"Failed to send task for revision: {e}")
             return False
+        finally:
+            self.db.return_connection(conn)
+    
+    def _calculate_rating(self, difficulty: int, assigned_at: datetime, 
+                         completed_at: datetime, deadline_minutes: int,
+                         priority: str, quality_coefficient: float) -> int:
+        """Calculate rating change based on task parameters"""
+        if not difficulty or not deadline_minutes or not assigned_at:
+            return 0
+        
+        # Calculate time taken in minutes
+        time_taken = (completed_at - assigned_at).total_seconds() / 60
+        
+        # Speed coefficient
+        if time_taken < (deadline_minutes * 0.5):
+            speed_coeff = 1.2
+        elif time_taken <= deadline_minutes:
+            speed_coeff = 1.0
+        else:
+            speed_coeff = 0.4
+        
+        # Priority coefficient
+        priority_coeffs = {
+            'низкий': 1.0,
+            'средний': 1.1,
+            'высокий': 1.3
+        }
+        priority_coeff = priority_coeffs.get(priority, 1.0)
+        
+        # Calculate total rating
+        rating = (10 * difficulty) * speed_coeff * priority_coeff * quality_coefficient
+        
+        return int(rating)
+    
+    def check_overdue_tasks(self) -> list:
+        """Check for tasks that are overdue (2x deadline passed) and auto-fail them"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                # Find tasks where 2x deadline has passed
+                cursor.execute("""
+                    SELECT t.id, t.assigned_to, t.business_id, t.deadline_minutes, t.assigned_at
+                    FROM tasks t
+                    WHERE t.status IN ('assigned', 'in_progress')
+                    AND t.deadline_minutes IS NOT NULL
+                    AND t.assigned_at IS NOT NULL
+                    AND EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - t.assigned_at))/60 > (t.deadline_minutes * 2)
+                """)
+                overdue_tasks = cursor.fetchall()
+                
+                failed_tasks = []
+                for task in overdue_tasks:
+                    # Return task to pool
+                    cursor.execute("""
+                        UPDATE tasks 
+                        SET status = 'available',
+                            assigned_to = NULL,
+                            assigned_at = NULL,
+                            abandoned_by = %s,
+                            abandoned_at = CURRENT_TIMESTAMP
+                        WHERE id = %s
+                    """, (task['assigned_to'], task['id']))
+                    
+                    # Apply rating penalty
+                    cursor.execute("""
+                        UPDATE employees 
+                        SET rating = GREATEST(0, rating - 40)
+                        WHERE business_id = %s AND user_id = %s
+                        RETURNING rating
+                    """, (task['business_id'], task['assigned_to']))
+                    
+                    failed_tasks.append({
+                        'task_id': task['id'],
+                        'employee_id': task['assigned_to'],
+                        'business_id': task['business_id']
+                    })
+                    
+                    logger.info(f"Task {task['id']} auto-failed due to timeout, employee {task['assigned_to']} penalized -40 rating")
+                
+                conn.commit()
+                return failed_tasks
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to check overdue tasks: {e}")
+            return []
+        finally:
+            self.db.return_connection(conn)
+    
+    def get_submitted_tasks(self, business_id: int) -> list:
+        """Get all submitted tasks waiting for review"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute("""
+                    SELECT t.*, 
+                           u.username as assigned_to_username, u.first_name as assigned_to_name
+                    FROM tasks t
+                    LEFT JOIN users u ON t.assigned_to = u.user_id
+                    WHERE t.business_id = %s AND t.status = 'submitted'
+                    ORDER BY t.submitted_at ASC
+                """, (business_id,))
+                results = cursor.fetchall()
+                return [dict(row) for row in results] if results else []
+        except Exception as e:
+            logger.error(f"Failed to get submitted tasks: {e}")
+            return []
         finally:
             self.db.return_connection(conn)
 

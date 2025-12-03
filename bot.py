@@ -74,16 +74,17 @@ EXECUTORS_CHECKING, EXECUTORS_QUESTION = range(7, 9)
 INVITATION_RESPONSE = range(9, 10)
 
 # Task creation states
-TASK_DESCRIPTION = range(10, 11)
+TASK_DESCRIPTION, TASK_DEADLINE, TASK_DIFFICULTY, TASK_PRIORITY = range(10, 14)
 
 # Multi-step command states
-ADD_EMPLOYEE_USERNAME = range(11, 12)
-ACCEPT_INVITATION_ID = range(12, 13)
-REJECT_INVITATION_ID = range(13, 14)
-TAKE_TASK_ID = range(14, 15)
-ASSIGN_TASK_ID, ASSIGN_TASK_USERNAME = range(15, 17)
-COMPLETE_TASK_ID = range(17, 18)
-ABANDON_TASK_ID = range(18, 19)
+ADD_EMPLOYEE_USERNAME = range(14, 15)
+ACCEPT_INVITATION_ID = range(15, 16)
+REJECT_INVITATION_ID = range(16, 17)
+TAKE_TASK_ID = range(17, 18)
+ASSIGN_TASK_ID, ASSIGN_TASK_USERNAME = range(18, 20)
+COMPLETE_TASK_ID = range(20, 21)
+ABANDON_TASK_ID = range(21, 22)
+REVIEW_TASK_ID, REVIEW_TASK_DECISION = range(22, 24)
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1580,17 +1581,114 @@ async def task_description_handler(update: Update, context: ContextTypes.DEFAULT
         )
         return TASK_DESCRIPTION
 
+    # Save title and description in context
+    context.user_data['task_title'] = title
+    context.user_data['task_description'] = description
+
+    # Ask for deadline
+    await update.message.reply_text(
+        MESSAGES['task_deadline_question'],
+        parse_mode='Markdown'
+    )
+    return TASK_DEADLINE
+
+
+async def task_deadline_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle task deadline input"""
+    text = update.message.text.strip()
+
+    try:
+        deadline_minutes = int(text)
+        if deadline_minutes <= 0:
+            await update.message.reply_text(
+                "❌ Дедлайн должен быть положительным числом. Попробуйте еще раз:",
+                parse_mode='Markdown'
+            )
+            return TASK_DEADLINE
+
+        # Save deadline in context
+        context.user_data['task_deadline'] = deadline_minutes
+
+        # Ask for difficulty
+        await update.message.reply_text(
+            MESSAGES['task_difficulty_question'],
+            parse_mode='Markdown'
+        )
+        return TASK_DIFFICULTY
+
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Неверный формат. Укажите число (дедлайн в минутах):",
+            parse_mode='Markdown'
+        )
+        return TASK_DEADLINE
+
+
+async def task_difficulty_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle task difficulty input"""
+    text = update.message.text.strip()
+
+    try:
+        difficulty = int(text)
+        if not (1 <= difficulty <= 5):
+            await update.message.reply_text(
+                "❌ Сложность должна быть от 1 до 5. Попробуйте еще раз:",
+                parse_mode='Markdown'
+            )
+            return TASK_DIFFICULTY
+
+        # Save difficulty in context
+        context.user_data['task_difficulty'] = difficulty
+
+        # Ask for priority
+        await update.message.reply_text(
+            MESSAGES['task_priority_question'],
+            parse_mode='Markdown'
+        )
+        return TASK_PRIORITY
+
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Неверный формат. Укажите число от 1 до 5:",
+            parse_mode='Markdown'
+        )
+        return TASK_DIFFICULTY
+
+
+async def task_priority_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle task priority input and create task"""
+    user_id = update.effective_user.id
+    text = update.message.text.strip().lower()
+
+    if text not in ['низкий', 'средний', 'высокий']:
+        await update.message.reply_text(
+            "❌ Неверный приоритет. Укажите: низкий, средний или высокий:",
+            parse_mode='Markdown'
+        )
+        return TASK_PRIORITY
+
+    # Save priority in context
+    context.user_data['task_priority'] = text
+
     # Show thinking message
     thinking_msg = await update.message.reply_text("🤔 Создаю задачу и анализирую сотрудников...")
 
     try:
+        # Get all data from context
+        title = context.user_data.get('task_title')
+        description = context.user_data.get('task_description')
+        deadline_minutes = context.user_data.get('task_deadline')
+        difficulty = context.user_data.get('task_difficulty')
+        priority = context.user_data.get('task_priority')
+
         # Create task with AI recommendation
         success, message, result = user_manager.create_task_with_ai_recommendation(
-            user_id, title, description
+            user_id, title, description, deadline_minutes, difficulty, priority
         )
 
         if not success:
             await thinking_msg.edit_text(f"❌ {message}")
+            context.user_data.clear()
             return ConversationHandler.END
 
         task = result['task']
@@ -1619,11 +1717,14 @@ async def task_description_handler(update: Update, context: ContextTypes.DEFAULT
             )
 
         await thinking_msg.edit_text(response_text, parse_mode='Markdown')
-        logger.info(f"Task {task['id']} created by user {user_id}")
+        logger.info(f"Task {task['id']} created by user {user_id} with deadline={deadline_minutes}, difficulty={difficulty}, priority={priority}")
 
     except Exception as e:
         logger.error(f"Error creating task for user {user_id}: {e}")
         await thinking_msg.edit_text(MESSAGES['database_error'])
+
+    finally:
+        context.user_data.clear()
 
     return ConversationHandler.END
 
@@ -1656,6 +1757,17 @@ async def available_tasks_command(update: Update, context: ContextTypes.DEFAULT_
             escaped_business = escape_markdown(task['business_name'])
             tasks_text += f"*ID {task['id']}:* {escaped_title}\n"
             tasks_text += f"Бизнес: {escaped_business}\n"
+            if task.get('difficulty'):
+                tasks_text += f"⭐ Сложность: {task['difficulty']}/5\n"
+            if task.get('priority'):
+                tasks_text += f"🎯 Приоритет: {task['priority']}\n"
+            if task.get('deadline_minutes'):
+                hours = task['deadline_minutes'] // 60
+                minutes = task['deadline_minutes'] % 60
+                if hours > 0:
+                    tasks_text += f"⏰ Дедлайн: {hours} ч {minutes} мин\n"
+                else:
+                    tasks_text += f"⏰ Дедлайн: {minutes} мин\n"
             if task.get('description'):
                 desc = task['description'][:100]
                 if len(task['description']) > 100:
@@ -1697,10 +1809,42 @@ async def my_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         for task in tasks:
             escaped_title = escape_markdown(task['title'])
             escaped_business = escape_markdown(task['business_name'])
+            
+            # Status with emoji
+            status_emoji = {
+                'assigned': '📌',
+                'in_progress': '🔄',
+                'submitted': '📥'
+            }
+            emoji = status_emoji.get(task['status'], '❓')
             escaped_status = escape_markdown(task['status'])
+            
             tasks_text += f"*ID {task['id']}:* {escaped_title}\n"
             tasks_text += f"Бизнес: {escaped_business}\n"
-            tasks_text += f"Статус: {escaped_status}\n"
+            tasks_text += f"{emoji} Статус: {escaped_status}\n"
+            
+            if task.get('difficulty'):
+                tasks_text += f"⭐ Сложность: {task['difficulty']}/5\n"
+            if task.get('priority'):
+                tasks_text += f"🎯 Приоритет: {task['priority']}\n"
+            if task.get('deadline_minutes') and task.get('assigned_at'):
+                # Calculate time left
+                from datetime import datetime
+                assigned_at = task['assigned_at']
+                deadline = task['deadline_minutes']
+                elapsed_minutes = (datetime.now() - assigned_at).total_seconds() / 60
+                time_left = deadline - elapsed_minutes
+                
+                if time_left > 0:
+                    hours = int(time_left // 60)
+                    minutes = int(time_left % 60)
+                    if hours > 0:
+                        tasks_text += f"⏰ Осталось: {hours} ч {minutes} мин\n"
+                    else:
+                        tasks_text += f"⏰ Осталось: {minutes} мин\n"
+                else:
+                    tasks_text += f"⚠️ Дедлайн просрочен!\n"
+                    
             if task.get('description'):
                 desc = task['description'][:100]
                 if len(task['description']) > 100:
@@ -1995,6 +2139,10 @@ async def complete_task_process(update: Update, context: ContextTypes.DEFAULT_TY
     task_id = context.user_data.get('task_id')
 
     try:
+        # Get task info before completing
+        from database import business_repo
+        task = business_repo.get_task(task_id)
+        
         # Complete task
         success, message = user_manager.complete_task(user_id, task_id)
 
@@ -2003,6 +2151,34 @@ async def complete_task_process(update: Update, context: ContextTypes.DEFAULT_TY
                 MESSAGES['task_completed'],
                 parse_mode='Markdown'
             )
+            
+            # Send notification to business owner
+            if task:
+                business = business_repo.get_business_by_id(task['business_id'])
+                if business:
+                    owner_id = business['owner_id']
+                    
+                    # Get employee info
+                    user = update.effective_user
+                    employee_username = user.username if user.username else user.first_name
+                    employee_display = f"@{employee_username}" if user.username else employee_username
+                    
+                    # Escape markdown
+                    escaped_title = escape_markdown(task['title'])
+                    escaped_employee = escape_markdown(employee_display)
+                    
+                    try:
+                        await context.bot.send_message(
+                            chat_id=owner_id,
+                            text=MESSAGES['notification_task_submitted'].format(
+                                task_id=task_id,
+                                title=escaped_title,
+                                employee=escaped_employee
+                            ),
+                            parse_mode='Markdown'
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to notify owner {owner_id} about submitted task {task_id}: {e}")
         else:
             await update.message.reply_text(f"❌ {message}", parse_mode='Markdown')
 
@@ -2195,6 +2371,355 @@ async def all_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     except Exception as e:
         logger.error(f"Error in all_tasks command for user {user_id}: {e}")
         await update.message.reply_text(MESSAGES['database_error'])
+
+
+async def submitted_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle the /submitted_tasks command"""
+    user_id = update.effective_user.id
+
+    try:
+        # Check if user is business owner
+        if not user_manager.is_business_owner(user_id):
+            await update.message.reply_text(
+                MESSAGES['task_no_business'],
+                parse_mode='Markdown'
+            )
+            return
+
+        # Get submitted tasks
+        tasks = user_manager.get_submitted_tasks(user_id)
+
+        if not tasks:
+            await update.message.reply_text(
+                MESSAGES['submitted_tasks_empty'],
+                parse_mode='Markdown'
+            )
+            return
+
+        # Format tasks list
+        tasks_text = ""
+        for task in tasks:
+            escaped_title = escape_markdown(task['title'])
+            employee = f"@{task['assigned_to_username']}" if task.get('assigned_to_username') else task.get('assigned_to_name', 'Unknown')
+            escaped_employee = escape_markdown(employee)
+            
+            # Calculate time taken if possible
+            time_info = ""
+            if task.get('assigned_at') and task.get('submitted_at'):
+                time_taken = (task['submitted_at'] - task['assigned_at']).total_seconds() / 60
+                time_info = f"\n⏱ Время выполнения: {int(time_taken)} мин"
+            
+            tasks_text += f"*ID {task['id']}:* {escaped_title}\n"
+            tasks_text += f"👤 Сотрудник: {escaped_employee}{time_info}\n"
+            if task.get('difficulty'):
+                tasks_text += f"⭐ Сложность: {task['difficulty']}/5\n"
+            if task.get('priority'):
+                tasks_text += f"🎯 Приоритет: {task['priority']}\n"
+            tasks_text += "\n"
+
+        await update.message.reply_text(
+            MESSAGES['submitted_tasks'].format(tasks=tasks_text),
+            parse_mode='Markdown'
+        )
+        logger.info(f"User {user_id} viewed submitted tasks")
+
+    except Exception as e:
+        logger.error(f"Error in submitted_tasks command for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+
+
+async def review_task_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Start the review task conversation"""
+    user_id = update.effective_user.id
+
+    try:
+        # Check if user is business owner
+        if not user_manager.is_business_owner(user_id):
+            await update.message.reply_text(
+                MESSAGES['task_no_business'],
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
+
+        # Get submitted tasks
+        tasks = user_manager.get_submitted_tasks(user_id)
+
+        if not tasks:
+            await update.message.reply_text(
+                MESSAGES['submitted_tasks_empty'],
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
+
+        # Format tasks list
+        tasks_text = "📥 *Задачи на проверке:*\n\n"
+        for task in tasks:
+            escaped_title = escape_markdown(task['title'])
+            employee = f"@{task['assigned_to_username']}" if task.get('assigned_to_username') else task.get('assigned_to_name', 'Unknown')
+            escaped_employee = escape_markdown(employee)
+            tasks_text += f"*ID {task['id']}:* {escaped_title}\n"
+            tasks_text += f"Сотрудник: {escaped_employee}\n\n"
+
+        tasks_text += "\n💡 Укажите ID задачи для проверки:"
+
+        await update.message.reply_text(tasks_text, parse_mode='Markdown')
+        return REVIEW_TASK_ID
+
+    except Exception as e:
+        logger.error(f"Error in review_task_start for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+        return ConversationHandler.END
+
+
+async def review_task_id_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle task ID input for review_task"""
+    user_id = update.effective_user.id
+    
+    try:
+        task_id = int(update.message.text.strip())
+        
+        # Get task details
+        from database import business_repo
+        task = business_repo.get_task(task_id)
+        
+        if not task:
+            await update.message.reply_text(
+                "❌ Задача не найдена",
+                parse_mode='Markdown'
+            )
+            return REVIEW_TASK_ID
+        
+        # Check if task belongs to user's business
+        business = user_manager.get_business(user_id)
+        if not business or task['business_id'] != business['id']:
+            await update.message.reply_text(
+                "❌ Эта задача не принадлежит вашему бизнесу",
+                parse_mode='Markdown'
+            )
+            return REVIEW_TASK_ID
+        
+        if task['status'] != 'submitted':
+            await update.message.reply_text(
+                "❌ Задача не отправлена на проверку",
+                parse_mode='Markdown'
+            )
+            return REVIEW_TASK_ID
+        
+        # Save task_id in context
+        context.user_data['task_id'] = task_id
+        
+        # Calculate time taken
+        time_taken_str = "Неизвестно"
+        if task.get('assigned_at') and task.get('submitted_at'):
+            time_taken = (task['submitted_at'] - task['assigned_at']).total_seconds() / 60
+            hours = int(time_taken // 60)
+            minutes = int(time_taken % 60)
+            if hours > 0:
+                time_taken_str = f"{hours} ч {minutes} мин"
+            else:
+                time_taken_str = f"{minutes} мин"
+        
+        # Format task info
+        employee_raw = task.get('assigned_to_username', task.get('assigned_to_name', 'Unknown'))
+        employee = f"@{employee_raw}" if task.get('assigned_to_username') else employee_raw
+        
+        # Escape markdown special characters
+        escaped_title = escape_markdown(task['title'])
+        escaped_employee = escape_markdown(employee)
+        escaped_description = escape_markdown(task.get('description', 'Нет описания'))
+        
+        response_text = MESSAGES['review_task_info'].format(
+            task_id=task['id'],
+            title=escaped_title,
+            employee=escaped_employee,
+            difficulty=task.get('difficulty', 'Не указана'),
+            priority=task.get('priority', 'Не указан'),
+            deadline=task.get('deadline_minutes', 'Не указан'),
+            time_taken=time_taken_str,
+            description=escaped_description
+        )
+        
+        await update.message.reply_text(response_text, parse_mode='Markdown')
+        logger.info(f"User {user_id} reviewing task {task_id}")
+        return REVIEW_TASK_DECISION
+        
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Неверный формат ID. Пожалуйста, введите число.",
+            parse_mode='Markdown'
+        )
+        return REVIEW_TASK_ID
+    except Exception as e:
+        logger.error(f"Error in review_task_id_handler for user {user_id}: {e}", exc_info=True)
+        await update.message.reply_text(
+            "❌ Произошла ошибка при загрузке задачи. Попробуйте еще раз.",
+            parse_mode='Markdown'
+        )
+        return REVIEW_TASK_ID
+
+
+async def review_task_decision_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle review decision input"""
+    user_id = update.effective_user.id
+    text = update.message.text.strip().lower()
+    task_id = context.user_data.get('task_id')
+    
+    try:
+        # Get task info for notifications
+        from database import business_repo
+        task = business_repo.get_task(task_id)
+        
+        # Check if reject
+        if text == 'отклонить':
+            success, message = user_manager.reject_task(user_id, task_id)
+            if success:
+                # Escape markdown in message
+                escaped_message = escape_markdown(message)
+                await update.message.reply_text(
+                    MESSAGES['task_rejected'].format(message=escaped_message),
+                    parse_mode='Markdown'
+                )
+                
+                # Send notification to employee
+                if task and task.get('assigned_to'):
+                    employee_id = task['assigned_to']
+                    escaped_title = escape_markdown(task['title'])
+                    try:
+                        await context.bot.send_message(
+                            chat_id=employee_id,
+                            text=MESSAGES['notification_task_rejected'].format(
+                                task_id=task_id,
+                                title=escaped_title
+                            ),
+                            parse_mode='Markdown'
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to notify employee {employee_id} about rejected task {task_id}: {e}")
+            else:
+                escaped_message = escape_markdown(message)
+                await update.message.reply_text(f"❌ {escaped_message}", parse_mode='Markdown')
+            
+            context.user_data.clear()
+            return ConversationHandler.END
+        
+        # Check if send for revision
+        if text.startswith('доработка'):
+            parts = text.split()
+            if len(parts) != 2:
+                await update.message.reply_text(
+                    "❌ Неверный формат. Используйте: `доработка [минуты]`\nНапример: `доработка 120`",
+                    parse_mode='Markdown'
+                )
+                return REVIEW_TASK_DECISION
+            
+            try:
+                new_deadline = int(parts[1])
+                success, message = user_manager.send_task_for_revision(user_id, task_id, new_deadline)
+                if success:
+                    # Escape markdown in message
+                    escaped_message = escape_markdown(message)
+                    await update.message.reply_text(
+                        MESSAGES['task_sent_for_revision'].format(message=escaped_message),
+                        parse_mode='Markdown'
+                    )
+                    
+                    # Send notification to employee
+                    if task and task.get('assigned_to'):
+                        employee_id = task['assigned_to']
+                        escaped_title = escape_markdown(task['title'])
+                        try:
+                            await context.bot.send_message(
+                                chat_id=employee_id,
+                                text=MESSAGES['notification_task_revision'].format(
+                                    task_id=task_id,
+                                    title=escaped_title,
+                                    deadline=new_deadline
+                                ),
+                                parse_mode='Markdown'
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to notify employee {employee_id} about task revision {task_id}: {e}")
+                else:
+                    escaped_message = escape_markdown(message)
+                    await update.message.reply_text(f"❌ {escaped_message}", parse_mode='Markdown')
+                
+                context.user_data.clear()
+                return ConversationHandler.END
+            except ValueError:
+                await update.message.reply_text(
+                    "❌ Неверный формат дедлайна. Укажите число.",
+                    parse_mode='Markdown'
+                )
+                return REVIEW_TASK_DECISION
+        
+        # Try to parse as quality coefficient
+        try:
+            quality = float(text.replace(',', '.'))
+            if not (0.5 <= quality <= 1.0):
+                await update.message.reply_text(
+                    "❌ Коэффициент качества должен быть от 0.5 до 1.0",
+                    parse_mode='Markdown'
+                )
+                return REVIEW_TASK_DECISION
+            
+            success, message, result = user_manager.accept_task(user_id, task_id, quality)
+            if success:
+                # Escape markdown in message
+                escaped_message = escape_markdown(message)
+                await update.message.reply_text(
+                    MESSAGES['task_accepted'].format(message=escaped_message),
+                    parse_mode='Markdown'
+                )
+                
+                # Send notification to employee
+                if task and task.get('assigned_to') and result:
+                    employee_id = task['assigned_to']
+                    escaped_title = escape_markdown(task['title'])
+                    try:
+                        await context.bot.send_message(
+                            chat_id=employee_id,
+                            text=MESSAGES['notification_task_accepted'].format(
+                                task_id=task_id,
+                                title=escaped_title,
+                                quality=quality,
+                                rating_change=result['rating_change'],
+                                new_rating=result['new_rating']
+                            ),
+                            parse_mode='Markdown'
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to notify employee {employee_id} about accepted task {task_id}: {e}")
+            else:
+                escaped_message = escape_markdown(message)
+                await update.message.reply_text(f"❌ {escaped_message}", parse_mode='Markdown')
+            
+            context.user_data.clear()
+            return ConversationHandler.END
+        except ValueError:
+            await update.message.reply_text(
+                "❌ Неверный формат. Введите:\n"
+                "• Коэффициент качества (0.5-1.0)\n"
+                "• `доработка [минуты]`\n"
+                "• `отклонить`",
+                parse_mode='Markdown'
+            )
+            return REVIEW_TASK_DECISION
+            
+    except Exception as e:
+        logger.error(f"Error in review_task_decision_handler for user {user_id}: {e}", exc_info=True)
+        await update.message.reply_text(
+            "❌ Произошла ошибка при обработке. Попробуйте снова с команды /review_task",
+            parse_mode='Markdown'
+        )
+        context.user_data.clear()
+        return ConversationHandler.END
+
+
+async def review_task_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancel review task conversation"""
+    await update.message.reply_text("❌ Проверка задачи отменена")
+    context.user_data.clear()
+    return ConversationHandler.END
 
 
 # Find similar users command handler
@@ -2438,6 +2963,72 @@ async def find_similar_command(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text(MESSAGES['similar_error'])
 
 
+async def check_overdue_tasks_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Background job to check for overdue tasks"""
+    try:
+        from database import business_repo
+        from database import user_repo
+        
+        failed_tasks = business_repo.check_overdue_tasks()
+        
+        if failed_tasks:
+            logger.info(f"Auto-failed {len(failed_tasks)} overdue tasks")
+            
+            # Notify business owners and employees
+            for task_info in failed_tasks:
+                task_id = task_info['task_id']
+                employee_id = task_info['employee_id']
+                business_id = task_info['business_id']
+                
+                # Get task details
+                task = business_repo.get_task(task_id)
+                if not task:
+                    continue
+                
+                # Get business owner
+                business = business_repo.get_business_by_id(business_id)
+                if business:
+                    owner_id = business['owner_id']
+                    
+                    # Get employee info
+                    employee = user_repo.get_user(employee_id)
+                    employee_display = f"@{employee['username']}" if employee and employee.get('username') else f"ID {employee_id}"
+                    
+                    # Escape markdown
+                    escaped_title = escape_markdown(task['title'])
+                    escaped_employee = escape_markdown(employee_display)
+                    
+                    # Notify owner
+                    try:
+                        await context.bot.send_message(
+                            chat_id=owner_id,
+                            text=MESSAGES['notification_task_overdue_owner'].format(
+                                task_id=task_id,
+                                title=escaped_title,
+                                employee=escaped_employee
+                            ),
+                            parse_mode='Markdown'
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to notify owner {owner_id}: {e}")
+                    
+                    # Notify employee
+                    try:
+                        await context.bot.send_message(
+                            chat_id=employee_id,
+                            text=MESSAGES['notification_task_overdue_employee'].format(
+                                task_id=task_id,
+                                title=escaped_title
+                            ),
+                            parse_mode='Markdown'
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to notify employee {employee_id}: {e}")
+                        
+    except Exception as e:
+        logger.error(f"Error in check_overdue_tasks_job: {e}")
+
+
 async def setup_bot_commands(application):
     """Set up bot commands for Telegram menu"""
     from telegram import BotCommand
@@ -2464,8 +3055,10 @@ async def setup_bot_commands(application):
         BotCommand("all_tasks", "Все задачи бизнеса"),
         BotCommand("take_task", "Взять задачу"),
         BotCommand("assign_task", "Назначить задачу"),
-        BotCommand("complete_task", "Завершить задачу"),
+        BotCommand("complete_task", "Сдать задачу на проверку"),
         BotCommand("abandon_task", "Отказаться от задачи"),
+        BotCommand("submitted_tasks", "Задачи на проверке"),
+        BotCommand("review_task", "Проверить задачу"),
     ]
     
     await application.bot.set_my_commands(commands)
@@ -2601,6 +3194,15 @@ def main() -> None:
                 TASK_DESCRIPTION: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, task_description_handler)
                 ],
+                TASK_DEADLINE: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, task_deadline_handler)
+                ],
+                TASK_DIFFICULTY: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, task_difficulty_handler)
+                ],
+                TASK_PRIORITY: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, task_priority_handler)
+                ],
             },
             fallbacks=[CommandHandler("cancel", task_cancel)],
         )
@@ -2617,6 +3219,24 @@ def main() -> None:
             fallbacks=[CommandHandler("cancel", abandon_task_cancel)],
         )
         application.add_handler(abandon_task_handler)
+
+        # Register submitted tasks command handler
+        application.add_handler(CommandHandler("submitted_tasks", submitted_tasks_command))
+
+        # Register review task conversation handler
+        review_task_handler = ConversationHandler(
+            entry_points=[CommandHandler("review_task", review_task_start)],
+            states={
+                REVIEW_TASK_ID: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, review_task_id_handler)
+                ],
+                REVIEW_TASK_DECISION: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, review_task_decision_handler)
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", review_task_cancel)],
+        )
+        application.add_handler(review_task_handler)
 
         # Register finance conversation handler
         finance_handler = ConversationHandler(
@@ -2683,6 +3303,11 @@ def main() -> None:
         # Set up bot commands for Telegram menu
         import asyncio
         asyncio.get_event_loop().run_until_complete(setup_bot_commands(application))
+
+        # Set up background job to check overdue tasks every 5 minutes
+        job_queue = application.job_queue
+        job_queue.run_repeating(check_overdue_tasks_job, interval=300, first=10)
+        logger.info("Background job for checking overdue tasks scheduled (every 5 minutes)")
 
         # Start the bot
         logger.info("🚀 Bot is starting...")
