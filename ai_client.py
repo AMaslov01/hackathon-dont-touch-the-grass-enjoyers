@@ -1,5 +1,5 @@
 """
-AI Client for interacting with OpenRouter API
+AI Client for interacting with OpenRouter API or Local LLM
 """
 import logging
 import requests
@@ -8,14 +8,48 @@ from config import Config
 
 logger = logging.getLogger(__name__)
 
+# Import local LLM and RAG only if in local mode
+if Config.AI_MODE == 'local':
+    try:
+        from local_llm import get_local_llm
+        from rag_integration import get_rag as get_bot_rag
+        logger.info("Local LLM mode enabled")
+    except ImportError as e:
+        logger.error(f"Failed to import local LLM modules: {e}")
+        logger.error("Falling back to OpenRouter mode")
+        Config.AI_MODE = 'openrouter'
+
 
 class AIClient:
-    """Client for AI API interactions"""
+    """Client for AI API interactions (OpenRouter or Local LLM)"""
     
     def __init__(self):
+        self.mode = Config.AI_MODE
         self.api_url = Config.OPENROUTER_API_URL
         self.api_key = Config.OPENROUTER_API_KEY
         self.model = Config.AI_MODEL
+        
+        # Initialize local LLM if in local mode
+        self.local_llm = None
+        self.rag_system = None
+        
+        if self.mode == 'local':
+            logger.info("Initializing Local LLM mode...")
+            try:
+                self.local_llm = get_local_llm(n_threads=Config.LOCAL_MODEL_THREADS)
+                if Config.RAG_ENABLED:
+                    self.rag_system = get_bot_rag(persist_directory=Config.RAG_PERSIST_DIR)
+                    if self.rag_system:
+                        count = self.rag_system.count_documents()
+                        if count > 0:
+                            logger.info(f"RAG enabled: {count} chunks")
+                        else:
+                            logger.warning("RAG empty. Add docs: python rag_tools/add_documents.py /path")
+                logger.info("Local LLM initialized successfully")
+            except Exception as e:
+                logger.error(f"Failed to initialize local LLM: {e}")
+                logger.error("Falling back to OpenRouter mode")
+                self.mode = 'openrouter'
         
         # System prompt to make responses in Russian
         self.system_prompt = (
@@ -53,6 +87,78 @@ class AIClient:
         Raises:
             Exception: If API call fails
         """
+        system_msg = system_prompt or self.system_prompt
+        
+        # Use local LLM if in local mode
+        if self.mode == 'local' and self.local_llm is not None:
+            return self._generate_local(user_prompt, system_msg)
+        
+        # Otherwise use OpenRouter API
+        return self._generate_openrouter(user_prompt, system_msg)
+    
+    def _generate_local(self, user_prompt: str, system_prompt: str) -> str:
+        """
+        Generate response using local LLM
+        
+        Args:
+            user_prompt: User's question or request
+            system_prompt: System prompt
+            
+        Returns:
+            AI generated response
+        """
+        try:
+            # Add RAG context if enabled
+            enhanced_prompt = user_prompt
+            
+            if self.rag_system and Config.RAG_ENABLED:
+                logger.info("Retrieving RAG context")
+                try:
+                    context = self.rag_system.get_context(
+                        user_prompt, 
+                        top_k=Config.RAG_TOP_K,
+                        max_tokens=Config.RAG_MAX_CONTEXT
+                    )
+                    
+                    if context:
+                        enhanced_prompt = f"""Используй следующий контекст для ответа:
+
+{context}
+
+---
+
+Вопрос: {user_prompt}"""
+                        logger.info(f"Added RAG context ({len(context)} chars)")
+                except Exception as e:
+                    logger.error(f"RAG context failed: {e}")
+            
+            logger.info(f"Generating response with local LLM (temp={Config.LOCAL_MODEL_TEMPERATURE})")
+            
+            response = self.local_llm.chat(
+                system_message=system_prompt,
+                user_message=enhanced_prompt,
+                max_tokens=1024,
+                temperature=Config.LOCAL_MODEL_TEMPERATURE
+            )
+            
+            logger.info(f"Successfully generated local response (length: {len(response)})")
+            return response
+            
+        except Exception as e:
+            logger.error(f"Local LLM generation failed: {e}")
+            raise Exception(f"Local LLM error: {str(e)}")
+    
+    def _generate_openrouter(self, user_prompt: str, system_prompt: str) -> str:
+        """
+        Generate response using OpenRouter API
+        
+        Args:
+            user_prompt: User's question or request
+            system_prompt: System prompt
+            
+        Returns:
+            AI generated response
+        """
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -63,7 +169,7 @@ class AIClient:
             "messages": [
                 {
                     "role": "system",
-                    "content": system_prompt or self.system_prompt
+                    "content": system_prompt
                 },
                 {
                     "role": "user",
@@ -73,7 +179,7 @@ class AIClient:
         }
         
         try:
-            logger.info(f"Sending request to AI API with model: {self.model}")
+            logger.info(f"Sending request to OpenRouter API with model: {self.model}")
             response = requests.post(
                 self.api_url, 
                 headers=headers, 
@@ -85,30 +191,30 @@ class AIClient:
             result = response.json()
             ai_response = result['choices'][0]['message']['content']
             
-            logger.info(f"Successfully received AI response (length: {len(ai_response)})")
+            logger.info(f"Successfully received OpenRouter response (length: {len(ai_response)})")
             return ai_response
             
         except requests.exceptions.HTTPError as e:
-            logger.error(f"AI API HTTP error: {e}")
+            logger.error(f"OpenRouter API HTTP error: {e}")
             logger.error(f"Response status: {response.status_code}")
             logger.error(f"Response body: {response.text[:500]}")
-            raise Exception(f"AI API error: {response.status_code}")
+            raise Exception(f"OpenRouter API error: {response.status_code}")
             
         except requests.exceptions.Timeout:
-            logger.error("AI API request timeout")
-            raise Exception("AI API timeout")
+            logger.error("OpenRouter API request timeout")
+            raise Exception("OpenRouter API timeout")
             
         except requests.exceptions.RequestException as e:
-            logger.error(f"AI API request failed: {e}")
-            raise Exception("AI API connection error")
+            logger.error(f"OpenRouter API request failed: {e}")
+            raise Exception("OpenRouter API connection error")
             
         except (KeyError, IndexError) as e:
-            logger.error(f"Failed to parse AI response: {e}")
+            logger.error(f"Failed to parse OpenRouter response: {e}")
             logger.error(f"Response: {response.text[:500]}")
-            raise Exception("Invalid AI response format")
+            raise Exception("Invalid OpenRouter response format")
         
         except Exception as e:
-            logger.error(f"Unexpected error in AI client: {e}")
+            logger.error(f"Unexpected error in OpenRouter client: {e}")
             raise
     
     def generate_financial_plan(self, business_info: dict) -> str:

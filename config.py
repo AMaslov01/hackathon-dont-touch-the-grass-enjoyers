@@ -17,10 +17,26 @@ class Config:
     # Telegram Bot Configuration
     TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
     
-    # OpenRouter AI Configuration
+    # AI Mode: 'local' or 'openrouter'
+    AI_MODE = os.getenv('AI_MODE', 'local')  # Default to local model
+    
+    # OpenRouter AI Configuration (used when AI_MODE='openrouter')
     OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
     OPENROUTER_API_URL = os.getenv('OPENROUTER_API_URL')
     AI_MODEL = os.getenv('AI_MODEL')
+    
+    # Local LLM Configuration (used when AI_MODE='local')
+    LOCAL_MODEL_PATH = os.getenv('LOCAL_MODEL_PATH')  # Optional: path to pre-downloaded model
+    LOCAL_MODEL_THREADS = int(os.getenv('LOCAL_MODEL_THREADS', '16'))  # CPU threads
+    LOCAL_MODEL_CONTEXT = int(os.getenv('LOCAL_MODEL_CONTEXT', '4096'))  # Context window
+    LOCAL_MODEL_TEMPERATURE = float(os.getenv('LOCAL_MODEL_TEMPERATURE', '0.7'))
+    
+    # RAG Configuration (using ragBaseMaker)
+    RAG_ENABLED = os.getenv('RAG_ENABLED', 'true').lower() == 'true'
+    RAG_PERSIST_DIR = os.getenv('RAG_PERSIST_DIR', './rag_data')  # RAG database directory
+    RAG_COLLECTION_NAME = os.getenv('RAG_COLLECTION_NAME', 'financial_docs')  # Collection name
+    RAG_TOP_K = int(os.getenv('RAG_TOP_K', '3'))  # Number of documents to retrieve
+    RAG_MAX_CONTEXT = int(os.getenv('RAG_MAX_CONTEXT', '2000'))  # Max context tokens
     
     # Database Configuration
     DB_HOST = os.getenv('DB_HOST') 
