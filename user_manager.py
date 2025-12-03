@@ -13,12 +13,12 @@ logger = logging.getLogger(__name__)
 
 class UserManager:
     """Manages user operations and token system"""
-
+    
     def __init__(self):
         self.cost_per_request = TOKEN_CONFIG['cost_per_request']
-
+    
     def get_or_create_user(self, user_id: int, username: str = None,
-                           first_name: str = None, last_name: str = None) -> dict:
+                          first_name: str = None, last_name: str = None) -> dict:
         """
         Get existing user or create new one
         
@@ -32,7 +32,7 @@ class UserManager:
             User dictionary with all information
         """
         return user_repo.get_or_create_user(user_id, username, first_name, last_name)
-
+    
     def check_and_refresh_tokens(self, user_id: int) -> dict:
         """
         Check if user needs token refresh and refresh if needed
@@ -44,7 +44,7 @@ class UserManager:
             Updated user dictionary
         """
         return user_repo.refresh_tokens(user_id)
-
+    
     def has_enough_tokens(self, user_id: int, required_tokens: int = None) -> bool:
         """
         Check if user has enough tokens
@@ -58,10 +58,10 @@ class UserManager:
         """
         if required_tokens is None:
             required_tokens = self.cost_per_request
-
+        
         user = user_repo.get_user(user_id)
         return user and user['tokens'] >= required_tokens
-
+    
     def use_tokens(self, user_id: int, amount: int = None) -> bool:
         """
         Deduct tokens from user account
@@ -75,9 +75,9 @@ class UserManager:
         """
         if amount is None:
             amount = self.cost_per_request
-
+        
         return user_repo.use_tokens(user_id, amount)
-
+    
     def get_balance_info(self, user_id: int) -> dict:
         """
         Get user's token balance and refresh time
@@ -91,11 +91,11 @@ class UserManager:
         user = user_repo.get_user(user_id)
         if not user:
             return None
-
+        
         # Calculate next refresh time
         last_refresh = user['last_token_refresh']
         next_refresh = last_refresh + timedelta(hours=TOKEN_CONFIG['refresh_interval_hours'])
-
+        
         return {
             'tokens': user['tokens'],
             'max_tokens': user['max_tokens'],
@@ -103,8 +103,8 @@ class UserManager:
             'next_refresh': next_refresh.strftime(TIME_FORMAT),
             'refresh_available': datetime.now() >= next_refresh
         }
-
-    def log_usage(self, user_id: int, prompt: str, response: str,
+    
+    def log_usage(self, user_id: int, prompt: str, response: str, 
                   tokens_used: int = None):
         """
         Log usage to history
@@ -117,12 +117,12 @@ class UserManager:
         """
         if tokens_used is None:
             tokens_used = self.cost_per_request
-
+        
         try:
             user_repo.add_usage_history(user_id, prompt, response, tokens_used)
         except Exception as e:
             logger.error(f"Failed to log usage for user {user_id}: {e}")
-
+    
     def process_request(self, user_id: int, tokens_amount: int = None) -> tuple[bool, Optional[str]]:
         """
         Process a user request (check tokens and deduct if available)
@@ -138,21 +138,21 @@ class UserManager:
         """
         if tokens_amount is None:
             tokens_amount = self.cost_per_request
-
+        
         # Refresh tokens if needed
         self.check_and_refresh_tokens(user_id)
-
+        
         # Check if user has enough tokens
         if not self.has_enough_tokens(user_id, tokens_amount):
             balance = self.get_balance_info(user_id)
             return False, balance['next_refresh']
-
+        
         # Deduct tokens
         if not self.use_tokens(user_id, tokens_amount):
             return False, "Не удалось списать токены"
-
+        
         return True, None
-
+    
     def get_business_info(self, user_id: int) -> Optional[dict]:
         """
         Get user's business information
@@ -172,9 +172,9 @@ class UserManager:
                 'goals': business.get('goals')
             }
         return None
-
-    def save_business_info(self, user_id: int, business_name: str, business_type: str,
-                           financial_situation: str, goals: str) -> bool:
+    
+    def save_business_info(self, user_id: int, business_name: str, business_type: str, 
+                          financial_situation: str, goals: str) -> bool:
         """
         Save user's business information
         
@@ -200,7 +200,7 @@ class UserManager:
         except Exception as e:
             logger.error(f"Failed to save business info for user {user_id}: {e}")
             return False
-
+    
     def has_business_info(self, user_id: int) -> bool:
         """
         Check if user has saved business information
@@ -212,7 +212,7 @@ class UserManager:
             True if user has business info, False otherwise
         """
         return business_repo.is_business_owner(user_id)
-
+    
     def get_workers_info(self, user_id: int) -> Optional[dict]:
         """
         Get user's workers search information
@@ -231,7 +231,7 @@ class UserManager:
                 logger.error(f"Failed to parse workers info for user {user_id}")
                 return None
         return None
-
+    
     def save_workers_info(self, user_id: int, description: str) -> bool:
         """
         Save user's workers search information
@@ -247,14 +247,14 @@ class UserManager:
             'description': description,
             'updated_at': datetime.now().isoformat()
         }
-
+        
         try:
             info_json = json.dumps(workers_info, ensure_ascii=False)
             return user_repo.save_workers_info(user_id, info_json)
         except Exception as e:
             logger.error(f"Failed to save workers info for user {user_id}: {e}")
             return False
-
+    
     def has_workers_info(self, user_id: int) -> bool:
         """
         Check if user has saved workers search information
@@ -266,7 +266,7 @@ class UserManager:
             True if user has workers info, False otherwise
         """
         return self.get_workers_info(user_id) is not None
-
+    
     def get_executors_info(self, user_id: int) -> Optional[dict]:
         """
         Get user's executors search information
@@ -285,7 +285,7 @@ class UserManager:
                 logger.error(f"Failed to parse executors info for user {user_id}")
                 return None
         return None
-
+    
     def save_executors_info(self, user_id: int, description: str) -> bool:
         """
         Save user's executors search information
@@ -301,14 +301,14 @@ class UserManager:
             'description': description,
             'updated_at': datetime.now().isoformat()
         }
-
+        
         try:
             info_json = json.dumps(executors_info, ensure_ascii=False)
             return user_repo.save_executors_info(user_id, info_json)
         except Exception as e:
             logger.error(f"Failed to save executors info for user {user_id}: {e}")
             return False
-
+    
     def has_executors_info(self, user_id: int) -> bool:
         """
         Check if user has saved executors search information
@@ -320,25 +320,25 @@ class UserManager:
             True if user has executors info, False otherwise
         """
         return self.get_executors_info(user_id) is not None
-
+    
     # Business and employee management methods
-
+    
     def get_business(self, user_id: int) -> Optional[dict]:
         """Get business owned by user"""
         return business_repo.get_business(user_id)
-
+    
     def is_business_owner(self, user_id: int) -> bool:
         """Check if user is a business owner"""
         return business_repo.is_business_owner(user_id)
-
+    
     def is_employee(self, user_id: int, business_id: int = None) -> bool:
         """Check if user is an employee"""
         return business_repo.is_employee(user_id, business_id)
-
+    
     def get_user_by_username(self, username: str) -> Optional[int]:
         """Get user_id by username"""
         return business_repo.get_user_by_username(username)
-
+    
     def invite_employee(self, owner_id: int, target_username: str) -> tuple[bool, str]:
         """
         Invite an employee to business
@@ -354,43 +354,43 @@ class UserManager:
         business = business_repo.get_business(owner_id)
         if not business:
             return False, "У вас нет бизнеса. Сначала создайте бизнес через /finance"
-
+        
         # Find target user
         target_user_id = business_repo.get_user_by_username(target_username)
         if not target_user_id:
             return False, f"Пользователь @{target_username} не найден или не использует бота"
-
+        
         # Check if trying to invite yourself
         if target_user_id == owner_id:
             return False, "Вы не можете пригласить самого себя"
-
+        
         # Send invitation
         success = business_repo.invite_employee(business['id'], target_user_id)
         if success:
             return True, f"Приглашение отправлено пользователю @{target_username}"
         else:
             return False, f"Приглашение уже было отправлено пользователю @{target_username}"
-
+    
     def get_pending_invitations(self, user_id: int) -> list:
         """Get pending invitations for user"""
         return business_repo.get_pending_invitations(user_id)
-
+    
     def respond_to_invitation(self, invitation_id: int, accept: bool) -> bool:
         """Accept or reject an invitation"""
         return business_repo.respond_to_invitation(invitation_id, accept)
-
+    
     def get_employees(self, business_id: int, status: str = 'accepted') -> list:
         """Get employees of a business"""
         return business_repo.get_employees(business_id, status)
-
+    
     def get_all_employees(self, business_id: int) -> list:
         """Get all employees of a business (all statuses)"""
         return business_repo.get_all_employees(business_id)
-
+    
     def get_user_businesses(self, user_id: int) -> list:
         """Get businesses where user is an employee"""
         return business_repo.get_user_businesses(user_id)
-
+    
     def remove_employee(self, owner_id: int, employee_user_id: int) -> tuple[bool, str]:
         """
         Remove an employee from business
@@ -405,17 +405,19 @@ class UserManager:
         business = business_repo.get_business(owner_id)
         if not business:
             return False, "У вас нет бизнеса"
-
+        
         success = business_repo.remove_employee(business['id'], employee_user_id)
         if success:
             return True, "Сотрудник удален из вашего бизнеса"
         else:
             return False, "Не удалось удалить сотрудника (возможно, он не является вашим сотрудником)"
-
+    
     # Task management methods
-
-    def create_task_with_ai_recommendation(self, owner_id: int, title: str,
-                                           description: str) -> tuple[bool, str, Optional[dict]]:
+    
+    def create_task_with_ai_recommendation(self, owner_id: int, title: str, 
+                                          description: str, difficulty: int = 3,
+                                          priority: str = 'medium', 
+                                          deadline_minutes: int = None) -> tuple[bool, str, Optional[dict]]:
         """
         Create a task and get AI recommendation for best employee
         
@@ -423,24 +425,27 @@ class UserManager:
             owner_id: Business owner user ID
             title: Task title
             description: Task description
+            difficulty: Task difficulty (1-5)
+            priority: Task priority ('low', 'medium', 'high')
+            deadline_minutes: Deadline in minutes
             
         Returns:
             Tuple of (success, message, task_dict or None)
         """
         from ai_client import ai_client
-
+        
         # Check if user is business owner
         business = business_repo.get_business(owner_id)
         if not business:
             return False, "У вас нет бизнеса", None
-
+        
         # Get employees task history
         employees_history = business_repo.get_all_employees_task_history(business['id'])
-
+        
         # Get AI recommendation
         ai_recommendation = None
         recommended_employee_id = None
-
+        
         if employees_history:
             try:
                 ai_recommendation = ai_client.recommend_employee_for_task(
@@ -450,7 +455,7 @@ class UserManager:
                     recommended_employee_id = ai_recommendation.get('user_id')
             except Exception as e:
                 logger.error(f"Failed to get AI recommendation: {e}")
-
+        
         # Create task
         try:
             task = business_repo.create_task(
@@ -458,6 +463,9 @@ class UserManager:
                 title=title,
                 description=description,
                 created_by=owner_id,
+                difficulty=difficulty,
+                priority=priority,
+                deadline_minutes=deadline_minutes,
                 ai_recommended_employee=recommended_employee_id
             )
             return True, "Задача создана", {
@@ -467,7 +475,7 @@ class UserManager:
         except Exception as e:
             logger.error(f"Failed to create task: {e}")
             return False, "Не удалось создать задачу", None
-
+    
     def get_available_tasks_for_employee(self, user_id: int) -> list:
         """Get available tasks for employee's businesses"""
         businesses = business_repo.get_user_businesses(user_id)
@@ -478,86 +486,74 @@ class UserManager:
                 task['business_name'] = business['business_name']
             all_tasks.extend(tasks)
         return all_tasks
-
+    
     def get_my_tasks(self, user_id: int) -> list:
         """Get user's assigned tasks"""
         return business_repo.get_assigned_tasks(user_id)
-
+    
     def take_task(self, user_id: int, task_id: int) -> tuple[bool, str]:
         """Employee takes a task"""
         # Check if task exists and is available
         task = business_repo.get_task(task_id)
         if not task:
             return False, "Задача не найдена"
-
+        
         if task['status'] != 'available':
             return False, "Задача уже назначена или выполнена"
-
+        
         # Check if user is employee of this business
         if not business_repo.is_employee(user_id, task['business_id']):
             return False, "Вы не являетесь сотрудником этого бизнеса"
-
+        
         # Take task
         success = business_repo.take_task(task_id, user_id)
         if success:
             return True, "Вы взяли задачу!"
         else:
             return False, "Не удалось взять задачу"
-
-    def assign_task_to_employee(self, owner_id: int, task_id: int,
+    
+    def assign_task_to_employee(self, owner_id: int, task_id: int, 
                                 employee_user_id: int) -> tuple[bool, str]:
         """Owner assigns task to specific employee"""
         # Check if owner has business
         business = business_repo.get_business(owner_id)
         if not business:
             return False, "У вас нет бизнеса"
-
+        
         # Check if task belongs to this business
         task = business_repo.get_task(task_id)
         if not task:
             return False, "Задача не найдена"
-
+        
         if task['business_id'] != business['id']:
             return False, "Эта задача не принадлежит вашему бизнесу"
-
-        if task['status'] not in ('available', 'abandoned'):
+        
+        if task['status'] != 'available':
             return False, "Задача уже назначена или выполнена"
-
+        
         # Check if target is employee
         if not business_repo.is_employee(employee_user_id, business['id']):
             return False, "Этот пользователь не является вашим сотрудником"
-
+        
         # Assign task
         success = business_repo.assign_task(task_id, employee_user_id, owner_id)
         if success:
-            if task['status'] == 'abandoned':
-                abandoned_by = None
-                if task.get('abandoned_by'):
-                    user = user_repo.get_user(task['abandoned_by'])
-                    abandoned_by = f"@{user['username']}" if user and user.get(
-                        'username') else f"ID {task['abandoned_by']}"
-                message = "Задача назначена сотруднику (ранее была отказана"
-                if abandoned_by:
-                    message += f" {abandoned_by}"
-                message += ")"
-                return True, message
-            else:
-                return True, "Задача назначена сотруднику"
+            return True, "Задача назначена сотруднику"
         else:
             return False, "Не удалось назначить задачу"
-
-    def assign_task_to_employee_by_username(self, owner_id: int, task_id: int,
-                                            employee_username: str) -> tuple[bool, str, Optional[int]]:
+    
+    def assign_task_to_employee_by_username(self, owner_id: int, task_id: int, 
+                                           employee_username: str) -> tuple[bool, str, Optional[int]]:
         """Owner assigns task to employee by username"""
         # Find employee by username
         employee_user_id = business_repo.get_user_by_username(employee_username)
         if not employee_user_id:
             return False, f"Пользователь @{employee_username} не найден или не использует бота", None
-
+        
         # Use existing method
         success, message = self.assign_task_to_employee(owner_id, task_id, employee_user_id)
         return success, message, employee_user_id if success else None
-
+    
     def complete_task(self, user_id: int, task_id: int) -> tuple[bool, str]:
         """Employee completes a task"""
         success = business_repo.complete_task(task_id, user_id)
@@ -565,7 +561,7 @@ class UserManager:
             return True, "Задача выполнена!"
         else:
             return False, "Не удалось завершить задачу. Возможно, она не назначена вам."
-
+    
     def get_business_all_tasks(self, owner_id: int) -> list:
         """Owner gets all tasks of their business"""
         business = business_repo.get_business(owner_id)
@@ -668,3 +664,4 @@ class UserManager:
 
 # Global user manager instance
 user_manager = UserManager()
+

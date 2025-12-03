@@ -1,5 +1,5 @@
-# Bot framework
-python-telegram-bot>=21.0
+# Bot framework (with job queue support for background tasks)
+python-telegram-bot[job-queue]>=21.0
 
 # HTTP requests
 requests>=2.31.0
