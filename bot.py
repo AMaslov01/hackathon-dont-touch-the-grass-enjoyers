@@ -76,19 +76,25 @@ INVITATION_RESPONSE = range(9, 10)
 # Task creation states
 TASK_DESCRIPTION, TASK_DEADLINE, TASK_DIFFICULTY, TASK_PRIORITY = range(10, 14)
 
+# User info state
+USER_INFO_INPUT = range(14, 15)
+
 # Multi-step command states
-ADD_EMPLOYEE_USERNAME = range(14, 15)
-ACCEPT_INVITATION_ID = range(15, 16)
-REJECT_INVITATION_ID = range(16, 17)
-TAKE_TASK_ID = range(17, 18)
-ASSIGN_TASK_ID, ASSIGN_TASK_USERNAME = range(18, 20)
-COMPLETE_TASK_ID = range(20, 21)
-ABANDON_TASK_ID = range(21, 22)
-REVIEW_TASK_ID, REVIEW_TASK_DECISION = range(22, 24)
-FIRE_EMPLOYEE_USERNAME = range(24, 25)
+ADD_EMPLOYEE_USERNAME = range(15, 16)
+ACCEPT_INVITATION_ID = range(16, 17)
+REJECT_INVITATION_ID = range(17, 18)
+TAKE_TASK_ID = range(18, 19)
+ASSIGN_TASK_ID, ASSIGN_TASK_USERNAME = range(19, 21)
+COMPLETE_TASK_ID = range(21, 22)
+ABANDON_TASK_ID = range(22, 23)
+REVIEW_TASK_ID, REVIEW_TASK_DECISION = range(23, 25)
+FIRE_EMPLOYEE_USERNAME = range(25, 26)
+
+# Swipe employees states
+SWIPE_EMPLOYEES_VIEWING = range(26, 27)
 
 
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handle the /start command"""
     user = update.effective_user
     user_id = user.id
@@ -104,6 +110,21 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             last_name=user.last_name
         )
 
+        # Check if user has filled their info
+        if not user_manager.has_user_info(user_id):
+            await update.message.reply_text(
+                "👋 *Добро пожаловать!*\n\n"
+                "Перед началом работы, пожалуйста, расскажите немного о себе.\n\n"
+                "📝 Укажите:\n"
+                "• Ваши навыки и опыт\n"
+                "• Сферы, в которых вы работаете\n"
+                "• Что вы умеете делать\n"
+                "• Чем вы можете быть полезны\n\n"
+                "Это поможет работодателям найти вас!",
+                parse_mode='Markdown'
+            )
+            return USER_INFO_INPUT
+
         # Send welcome message
         welcome_text = MESSAGES['welcome']
         await update.message.reply_text(welcome_text, parse_mode='Markdown')
@@ -117,15 +138,64 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             )
 
         logger.info(f"User {user_id} successfully initialized")
+        return ConversationHandler.END
 
     except Exception as e:
         logger.error(f"Error in start command for user {user_id}: {e}")
         await update.message.reply_text(MESSAGES['database_error'])
+        return ConversationHandler.END
+
+
+async def user_info_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle user info input"""
+    user_id = update.effective_user.id
+    user_info = update.message.text
+
+    try:
+        # Save user info
+        success = user_manager.save_user_info(user_id, user_info)
+
+        if success:
+            await update.message.reply_text(
+                "✅ Отлично! Ваша информация сохранена.\n\n"
+                "Теперь вы можете пользоваться всеми функциями бота!",
+                parse_mode='Markdown'
+            )
+            
+            # Send welcome message
+            welcome_text = MESSAGES['welcome']
+            await update.message.reply_text(welcome_text, parse_mode='Markdown')
+            
+            # Notify about initial tokens
+            balance = user_manager.get_balance_info(user_id)
+            if balance:
+                await update.message.reply_text(
+                    MESSAGES['account_created'].format(tokens=balance['tokens']),
+                    parse_mode='Markdown'
+                )
+            
+            logger.info(f"User {user_id} saved their info")
+            return ConversationHandler.END
+        else:
+            await update.message.reply_text(
+                "❌ Не удалось сохранить информацию. Попробуйте еще раз.",
+                parse_mode='Markdown'
+            )
+            return USER_INFO_INPUT
+
+    except Exception as e:
+        logger.error(f"Error saving user info for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+        return ConversationHandler.END
 
 
 async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the /balance command"""
     user_id = update.effective_user.id
+
+    # Check if user has filled their info
+    if not await check_user_info_filled(update, context):
+        return
 
     try:
         # Check and refresh tokens if needed
@@ -155,6 +225,10 @@ async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def roulette_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the /roulette command"""
     user_id = update.effective_user.id
+
+    # Check if user has filled their info
+    if not await check_user_info_filled(update, context):
+        return
 
     try:
         # Ensure user exists in database
@@ -221,6 +295,30 @@ async def check_and_notify_roulette(update: Update, user_id: int):
         logger.error(f"Error checking roulette notification for user {user_id}: {e}")
 
 
+async def check_user_info_filled(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """
+    Check if user has filled their info. If not, prompt them to do so.
+    Returns True if user info is filled, False otherwise.
+    """
+    user_id = update.effective_user.id
+    
+    # Skip check for /start command (it handles user_info collection)
+    if update.message and update.message.text and update.message.text.startswith('/start'):
+        return True
+    
+    # Check if user has filled their info
+    if not user_manager.has_user_info(user_id):
+        await update.message.reply_text(
+            "⚠️ *Доступ ограничен*\n\n"
+            "Для использования бота необходимо заполнить информацию о себе.\n\n"
+            "Пожалуйста, используйте команду /start для начала работы.",
+            parse_mode='Markdown'
+        )
+        return False
+    
+    return True
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle regular text messages"""
     user_id = update.effective_user.id
@@ -229,6 +327,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Check if it's a text message
     if not user_message:
         await update.message.reply_text(MESSAGES['invalid_message'], parse_mode='Markdown')
+        return
+
+    # Check if user has filled their info
+    if not await check_user_info_filled(update, context):
         return
 
     logger.info(f"User {user_id} sent message: {user_message[:50]}...")
@@ -308,6 +410,10 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 async def finance_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start the finance conversation"""
     user_id = update.effective_user.id
+
+    # Check if user has filled their info
+    if not await check_user_info_filled(update, context):
+        return ConversationHandler.END
 
     try:
         # Ensure user exists in database
@@ -2959,6 +3065,10 @@ async def find_similar_command(update: Update, context: ContextTypes.DEFAULT_TYP
     user_id = update.effective_user.id
     user = update.effective_user
 
+    # Check if user has filled their info
+    if not await check_user_info_filled(update, context):
+        return
+
     try:
         # Ensure user exists in database
         user_manager.get_or_create_user(
@@ -3080,6 +3190,328 @@ async def find_similar_command(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text(MESSAGES['similar_error'])
 
 
+async def swipe_employees_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Start the swipe employees feature"""
+    user_id = update.effective_user.id
+
+    try:
+        # Check if user is business owner
+        if not user_manager.is_business_owner(user_id):
+            await update.message.reply_text(
+                MESSAGES['task_no_business'],
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
+
+        # Get business info
+        business = user_manager.get_business(user_id)
+        business_info = {
+            'business_name': business.get('business_name'),
+            'business_type': business.get('business_type'),
+            'financial_situation': business.get('financial_situation'),
+            'goals': business.get('goals')
+        }
+
+        # Show searching message
+        thinking_msg = await update.message.reply_text("🔍 Ищу подходящих кандидатов...")
+
+        # Get available candidates (users without business or job)
+        candidates = user_manager.get_users_without_business_or_job(exclude_user_id=user_id)
+
+        if not candidates:
+            await thinking_msg.edit_text(
+                "😔 К сожалению, сейчас нет доступных кандидатов без места работы.",
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
+
+        # Use AI to find top 3 candidates
+        top_candidates = ai_client.find_top_candidates_for_business(business_info, candidates)
+
+        if not top_candidates:
+            await thinking_msg.edit_text(
+                "😔 К сожалению, не нашлось подходящих кандидатов для вашего бизнеса.\n\n"
+                "Попробуйте позже!",
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
+
+        # Save candidates to context
+        context.user_data['candidates'] = top_candidates
+        context.user_data['current_index'] = 0
+
+        # Delete thinking message
+        await thinking_msg.delete()
+
+        # Show first candidate
+        return await show_next_candidate(update, context)
+
+    except Exception as e:
+        logger.error(f"Error in swipe_employees_start for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+        return ConversationHandler.END
+
+
+async def show_next_candidate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Show the next candidate with accept/reject buttons"""
+    candidates = context.user_data.get('candidates', [])
+    current_index = context.user_data.get('current_index', 0)
+
+    # Check if we've shown all candidates
+    if current_index >= len(candidates):
+        await update.effective_message.reply_text(
+            "✅ Вы просмотрели всех доступных кандидатов!",
+            parse_mode='Markdown'
+        )
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    # Get current candidate
+    candidate = candidates[current_index]
+    username = candidate.get('username') or f"пользователь_{candidate.get('user_id')}"
+    first_name = candidate.get('first_name', '')
+    user_info = candidate.get('user_info', 'Нет описания')
+    rating = candidate.get('overall_rating')
+    reasoning = candidate.get('reasoning', 'AI рекомендует этого кандидата')
+
+    # Format rating
+    rating_text = f"⭐ Рейтинг: {rating}" if rating is not None else "⭐ Рейтинг: нет опыта"
+
+    # Escape markdown in user input
+    escaped_username = escape_markdown(f"@{username}")
+    escaped_first_name = escape_markdown(first_name)
+    escaped_user_info = escape_markdown(user_info)
+    escaped_reasoning = escape_markdown(reasoning)
+
+    # Create message
+    message_text = (
+        f"👤 *Кандидат {current_index + 1} из {len(candidates)}*\n\n"
+        f"*Пользователь:* {escaped_username}\n"
+        f"*Имя:* {escaped_first_name}\n"
+        f"{rating_text}\n\n"
+        f"*Описание:*\n{escaped_user_info}\n\n"
+        f"🤖 *Почему подходит:*\n{escaped_reasoning}\n\n"
+        f"Пригласить этого кандидата?"
+    )
+
+    # Create inline keyboard
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ Принять", callback_data=f"swipe_accept_{current_index}"),
+            InlineKeyboardButton("❌ Отклонить", callback_data=f"swipe_reject_{current_index}")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    # Send or edit message
+    if update.callback_query:
+        logger.info(f"Editing message for user {update.effective_user.id}")
+        await update.callback_query.edit_message_text(
+            text=message_text,
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
+    else:
+        logger.info(f"Sending message for user {update.effective_user.id}")
+        await update.message.reply_text(
+            text=message_text,
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
+
+    return SWIPE_EMPLOYEES_VIEWING
+
+
+async def swipe_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle swipe accept/reject callbacks"""
+    query = update.callback_query
+    user_id = update.effective_user.id
+    data = query.data
+    
+    logger.info(f"Swipe callback handler called for user {user_id}, data: {data}")
+
+    try:
+        candidates = context.user_data.get('candidates', [])
+        current_index = context.user_data.get('current_index', 0)
+        
+        logger.info(f"Current index: {current_index}, Total candidates: {len(candidates)}")
+
+        if not candidates or current_index >= len(candidates):
+            logger.warning(f"No candidates or index out of range for user {user_id}")
+            await query.answer("❌ Произошла ошибка")
+            await query.edit_message_text("❌ Произошла ошибка. Попробуйте еще раз.")
+            context.user_data.clear()
+            return ConversationHandler.END
+
+        candidate = candidates[current_index]
+        candidate_username = candidate.get('username') or f"пользователь_{candidate.get('user_id')}"
+        
+        logger.info(f"Processing candidate: {candidate_username}")
+
+        if data.startswith("swipe_accept_"):
+            logger.info(f"User {user_id} accepted candidate {candidate_username}")
+            # Answer callback query first
+            await query.answer("✅ Отправляю приглашение...")
+            
+            # Invite the candidate
+            success, message = user_manager.invite_employee(user_id, candidate_username)
+
+            if success:
+                logger.info(f"Successfully invited candidate {candidate_username}")
+                # Notify the candidate
+                candidate_id = candidate.get('user_id')
+                if candidate_id:
+                    try:
+                        business = user_manager.get_business(user_id)
+                        # Get the invitation ID
+                        invitations = user_manager.get_pending_invitations(candidate_id)
+                        invitation_id = None
+                        for inv in invitations:
+                            if inv['business_name'] == business['business_name']:
+                                invitation_id = inv['id']
+                                break
+
+                        if invitation_id:
+                            # Create inline keyboard with Accept/Reject buttons
+                            keyboard = [
+                                [
+                                    InlineKeyboardButton("✅ Принять", callback_data=f"accept_inv_{invitation_id}"),
+                                    InlineKeyboardButton("❌ Отклонить", callback_data=f"reject_inv_{invitation_id}")
+                                ]
+                            ]
+                            reply_markup = InlineKeyboardMarkup(keyboard)
+
+                            escaped_business_name = escape_markdown(business['business_name'])
+                            await context.bot.send_message(
+                                chat_id=candidate_id,
+                                text=f"🎉 *Новое приглашение!*\n\n"
+                                     f"Вас пригласили стать сотрудником бизнеса *{escaped_business_name}*\n\n"
+                                     f"Выберите действие:",
+                                parse_mode='Markdown',
+                                reply_markup=reply_markup
+                            )
+                            logger.info(f"Sent invitation notification to candidate {candidate_id}")
+                    except Exception as e:
+                        logger.warning(f"Failed to notify user {candidate_id}: {e}")
+                
+                # Delete the current message
+                try:
+                    await query.message.delete()
+                    logger.info(f"Deleted current swipe message for user {user_id}")
+                except Exception as del_err:
+                    logger.warning(f"Failed to delete message: {del_err}")
+                
+                # Send confirmation message
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=f"✅ Приглашение отправлено @{candidate_username}!"
+                )
+                logger.info(f"Sent confirmation message to user {user_id}")
+            else:
+                logger.warning(f"Failed to invite candidate {candidate_username}: {message}")
+                await query.answer("❌ Ошибка")
+                await query.edit_message_text(f"❌ {message}")
+                return ConversationHandler.END
+
+        elif data.startswith("swipe_reject_"):
+            logger.info(f"User {user_id} rejected candidate {candidate_username}")
+            # Answer callback query
+            await query.answer("➡️ Следующий кандидат")
+            
+            # Delete the current message
+            try:
+                await query.message.delete()
+                logger.info(f"Deleted message for user {user_id}")
+            except Exception as del_err:
+                logger.warning(f"Failed to delete message: {del_err}")
+
+        # Move to next candidate
+        context.user_data['current_index'] = current_index + 1
+        logger.info(f"Moving to next candidate, new index: {context.user_data['current_index']}")
+
+        # Check if there are more candidates
+        if context.user_data['current_index'] >= len(candidates):
+            await context.bot.send_message(
+                chat_id=user_id,
+                text="✅ Вы просмотрели всех доступных кандидатов!",
+                parse_mode='Markdown'
+            )
+            context.user_data.clear()
+            return ConversationHandler.END
+
+        # Show next candidate in a new message
+        next_candidate = candidates[context.user_data['current_index']]
+        current_idx = context.user_data['current_index']
+        
+        username = next_candidate.get('username') or f"пользователь_{next_candidate.get('user_id')}"
+        first_name = next_candidate.get('first_name', '')
+        user_info = next_candidate.get('user_info', 'Нет описания')
+        rating = next_candidate.get('overall_rating')
+        reasoning = next_candidate.get('reasoning', 'AI рекомендует этого кандидата')
+
+        # Format rating
+        rating_text = f"⭐ Рейтинг: {rating}" if rating is not None else "⭐ Рейтинг: нет опыта"
+
+        # Escape markdown in user input
+        escaped_username = escape_markdown(f"@{username}")
+        escaped_first_name = escape_markdown(first_name)
+        escaped_user_info = escape_markdown(user_info)
+        escaped_reasoning = escape_markdown(reasoning)
+
+        # Create message
+        message_text = (
+            f"👤 *Кандидат {current_idx + 1} из {len(candidates)}*\n\n"
+            f"*Пользователь:* {escaped_username}\n"
+            f"*Имя:* {escaped_first_name}\n"
+            f"{rating_text}\n\n"
+            f"*Описание:*\n{escaped_user_info}\n\n"
+            f"🤖 *Почему подходит:*\n{escaped_reasoning}\n\n"
+            f"Пригласить этого кандидата?"
+        )
+
+        # Create inline keyboard
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ Принять", callback_data=f"swipe_accept_{current_idx}"),
+                InlineKeyboardButton("❌ Отклонить", callback_data=f"swipe_reject_{current_idx}")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        logger.info(f"Sending new candidate message to user {user_id}, candidate {current_idx + 1}/{len(candidates)}")
+        
+        sent_message = await context.bot.send_message(
+            chat_id=user_id,
+            text=message_text,
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
+        
+        logger.info(f"Successfully sent message {sent_message.message_id} to user {user_id}")
+
+        return SWIPE_EMPLOYEES_VIEWING
+
+    except Exception as e:
+        logger.error(f"Error in swipe_callback_handler for user {user_id}: {e}", exc_info=True)
+        await query.answer("❌ Ошибка")
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=MESSAGES['database_error']
+            )
+        except:
+            pass
+        context.user_data.clear()
+        return ConversationHandler.END
+
+
+async def swipe_employees_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancel swipe employees"""
+    await update.message.reply_text("❌ Просмотр кандидатов отменен")
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
 async def check_overdue_tasks_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Background job to check for overdue tasks"""
     try:
@@ -3161,6 +3593,7 @@ async def setup_bot_commands(application):
         BotCommand("find_similar", "Найти партнёров"),
         BotCommand("export_history", "Экспорт истории чата в PDF"),
         BotCommand("add_employee", "Пригласить сотрудника"),
+        BotCommand("swipe_employees", "🔍 Найти сотрудников (свайп)"),
         BotCommand("fire_employee", "Уволить сотрудника"),
         BotCommand("employees", "Список сотрудников"),
         BotCommand("invitations", "Посмотреть приглашения"),
@@ -3213,16 +3646,31 @@ def main() -> None:
             .build()
         )
 
-        # Register command handlers
-        application.add_handler(CommandHandler("start", start_command))
+        # Register start command as conversation handler (for user info collection)
+        start_handler = ConversationHandler(
+            entry_points=[CommandHandler("start", start_command)],
+            states={
+                USER_INFO_INPUT: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, user_info_handler)
+                ],
+            },
+            fallbacks=[],
+            allow_reentry=True
+        )
+        application.add_handler(start_handler)
+
+        # Register other command handlers
         application.add_handler(CommandHandler("balance", balance_command))
         application.add_handler(CommandHandler("roulette", roulette_command))
         application.add_handler(CommandHandler("help", help_command))
         application.add_handler(CommandHandler("find_similar", find_similar_command))
         application.add_handler(CommandHandler("export_history", export_history_command))
 
-        # Register callback query handler for inline buttons
-        application.add_handler(CallbackQueryHandler(invitation_callback_handler))
+        # Register callback query handler for inline buttons (only invitation buttons)
+        application.add_handler(CallbackQueryHandler(
+            invitation_callback_handler, 
+            pattern="^(accept_inv_|reject_inv_)"
+        ))
 
         # Register employee management command handlers
         application.add_handler(CommandHandler("employees", employees_command))
@@ -3421,6 +3869,18 @@ def main() -> None:
         )
         application.add_handler(executors_handler)
 
+        # Register swipe employees conversation handler
+        swipe_employees_handler = ConversationHandler(
+            entry_points=[CommandHandler("swipe_employees", swipe_employees_start)],
+            states={
+                SWIPE_EMPLOYEES_VIEWING: [
+                    CallbackQueryHandler(swipe_callback_handler, pattern="^swipe_(accept|reject)_")
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", swipe_employees_cancel)],  # Track callback queries per message
+        )
+        application.add_handler(swipe_employees_handler)
+
         # Register message handler
         application.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
@@ -3431,7 +3891,7 @@ def main() -> None:
 
         # Set up bot commands for Telegram menu
         import asyncio
-        asyncio.get_event_loop().run_until_complete(setup_bot_commands(application))
+        #asyncio.get_event_loop().run_until_complete(setup_bot_commands(application))
 
         # Set up background job to check overdue tasks every 5 minutes
         job_queue = application.job_queue

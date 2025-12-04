@@ -595,6 +595,136 @@ USERNAME: @username
             logger.error(f"Error getting AI recommendation: {e}")
             return None
 
+    def find_top_candidates_for_business(self, business_info: dict, candidates: list) -> list:
+        """
+        Find top 3 candidates suitable for a business based on their user_info
+        
+        Args:
+            business_info: Dictionary with business information
+                - business_name: Name of the business
+                - business_type: Type of business
+                - financial_situation: Current financial situation  
+                - goals: Business goals
+            candidates: List of candidate dictionaries
+                - user_id: User ID
+                - username: Username
+                - first_name: First name
+                - user_info: User's personal description
+                - overall_rating: User's rating (can be None)
+        
+        Returns:
+            List of up to 3 most suitable candidates sorted by AI preference
+            Each candidate dict includes original data plus 'reasoning' field from AI
+        """
+        if not candidates:
+            return []
+        
+        # Prepare business info for AI
+        business_desc = f"""
+Информация о бизнесе:
+Название: {business_info.get('business_name', 'Не указано')}
+Тип бизнеса: {business_info.get('business_type', 'Не указано')}
+Финансовая ситуация: {business_info.get('financial_situation', 'Не указано')}
+Цели: {business_info.get('goals', 'Не указано')}
+"""
+        
+        # Prepare candidates info for AI
+        candidates_desc = "Доступные кандидаты:\n\n"
+        for i, candidate in enumerate(candidates, 1):
+            username = candidate.get('username') or f"пользователь_{candidate.get('user_id')}"
+            first_name = candidate.get('first_name', '')
+            rating = candidate.get('overall_rating')
+            rating_str = f"Рейтинг: {rating}" if rating is not None else "Рейтинг: нет опыта"
+            
+            candidates_desc += f"""Кандидат {i}:
+Username: @{username}
+Имя: {first_name}
+{rating_str}
+Описание: {candidate.get('user_info', 'Не указано')}
+
+---
+"""
+        
+        system_prompt = (
+            "Ты опытный HR-менеджер и рекрутер. "
+            "Твоя задача - выбрать до 3 наиболее подходящих кандидатов для бизнеса на основе их описаний.\n\n"
+            "ВАЖНЫЕ ПРАВИЛА:\n"
+            "1. Анализируй соответствие навыков и опыта кандидата требованиям бизнеса\n"
+            "2. Учитывай рейтинг кандидата (выше = лучше), но не делай его единственным критерием\n"
+            "3. Отдавай предпочтение кандидатам с релевантным опытом\n"
+            "4. Верни от 1 до 3 наиболее подходящих кандидатов\n"
+            "5. Формат ответа СТРОГО (для каждого кандидата):\n\n"
+            "КАНДИДАТ: @username\n"
+            "ПРИЧИНА: [краткое объяснение почему этот кандидат подходит]\n\n"
+            "6. НЕ добавляй никаких дополнительных комментариев или вступлений\n"
+            "7. Если ни один кандидат не подходит, верни: 'ПОДХОДЯЩИХ КАНДИДАТОВ НЕТ'\n"
+            "8. Отвечай ТОЛЬКО на русском языке"
+        )
+        
+        user_prompt = f"""
+{business_desc}
+
+{candidates_desc}
+
+Выбери до 3 наиболее подходящих кандидатов для этого бизнеса.
+Сортируй по релевантности (самый подходящий первым).
+"""
+        
+        try:
+            response = self.generate_response(user_prompt, system_prompt)
+            
+            # Parse response
+            if 'ПОДХОДЯЩИХ КАНДИДАТОВ НЕТ' in response.upper():
+                return []
+            
+            selected = []
+            lines = response.strip().split('\n')
+            current_username = None
+            current_reasoning = None
+            
+            for line in lines:
+                line = line.strip()
+                if line.startswith('КАНДИДАТ:'):
+                    # Save previous candidate if exists
+                    if current_username:
+                        # Find candidate by username
+                        for candidate in candidates:
+                            cand_username = candidate.get('username') or f"пользователь_{candidate.get('user_id')}"
+                            if cand_username == current_username:
+                                candidate_copy = candidate.copy()
+                                candidate_copy['reasoning'] = current_reasoning
+                                selected.append(candidate_copy)
+                                break
+                    
+                    # Start new candidate
+                    current_username = line.replace('КАНДИДАТ:', '').strip().lstrip('@')
+                    current_reasoning = None
+                elif line.startswith('ПРИЧИНА:'):
+                    current_reasoning = line.replace('ПРИЧИНА:', '').strip()
+            
+            # Don't forget the last candidate
+            if current_username:
+                for candidate in candidates:
+                    cand_username = candidate.get('username') or f"пользователь_{candidate.get('user_id')}"
+                    if cand_username == current_username:
+                        candidate_copy = candidate.copy()
+                        candidate_copy['reasoning'] = current_reasoning
+                        selected.append(candidate_copy)
+                        break
+            
+            # Limit to 3 candidates
+            return selected[:3]
+            
+        except Exception as e:
+            logger.error(f"Error finding top candidates: {e}")
+            # Fallback: return first 3 candidates sorted by rating
+            sorted_candidates = sorted(
+                candidates,
+                key=lambda c: (c.get('overall_rating') is not None, c.get('overall_rating') or 0),
+                reverse=True
+            )
+            return sorted_candidates[:3]
+
 
 # Global AI client instance
 ai_client = AIClient()
