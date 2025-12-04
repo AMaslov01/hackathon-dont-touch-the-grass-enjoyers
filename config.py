@@ -38,6 +38,10 @@ class Config:
     RAG_TOP_K = int(os.getenv('RAG_TOP_K', '3'))  # Number of documents to retrieve
     RAG_MAX_CONTEXT = int(os.getenv('RAG_MAX_CONTEXT', '2000'))  # Max context tokens
     
+    # Translation Configuration (for models trained on English data)
+    TRANSLATION_ENABLED = os.getenv('TRANSLATION_ENABLED', 'false').lower() == 'true'
+    TRANSLATION_DEVICE = os.getenv('TRANSLATION_DEVICE', 'cpu')  # 'cpu' or 'cuda'
+    
     # Database Configuration
     DB_HOST = os.getenv('DB_HOST') 
     DB_PORT = os.getenv('DB_PORT') 

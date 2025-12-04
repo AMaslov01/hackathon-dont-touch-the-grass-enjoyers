@@ -8,14 +8,31 @@ This module combines all components:
 - Vector database
 """
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Literal
 from pathlib import Path
-import json
+from dataclasses import dataclass, field
 
-from ragBaseMaker.parsers import UniversalParser, ParsedDocument
-from ragBaseMaker.chunking import RecursiveChunker, TextChunk
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.schema import Document
+from langchain.vectorstores import Chroma
+
+try:
+    from langchain_experimental.text_splitter import SemanticChunker
+    SEMANTIC_CHUNKER_AVAILABLE = True
+except ImportError:
+    SEMANTIC_CHUNKER_AVAILABLE = False
+    SemanticChunker = None
+
 from ragBaseMaker.embeddings import MultilingualEmbedder
-from ragBaseMaker.vectordb import ChromaVectorDB, FAISSVectorDB, SearchResult
+from ragBaseMaker.document_loader import DocumentLoader
+
+
+@dataclass
+class SearchResult:
+    """Search result from RAG system."""
+    text: str
+    score: float
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 class RAGSystem:
@@ -35,7 +52,7 @@ class RAGSystem:
         embedding_model: str = 'intfloat/multilingual-e5-base',
         chunk_size: int = 512,
         chunk_overlap: int = 50,
-        use_faiss: bool = False,
+        chunker_type: Literal['recursive', 'semantic'] = 'recursive',
     ):
         """
         Initialize the RAG system.
@@ -43,38 +60,62 @@ class RAGSystem:
         Args:
             persist_directory: Directory to store data
             collection_name: Name of the document collection
-            embedding_model: HuggingFace model for embeddings
-            chunk_size: Target chunk size in characters
-            chunk_overlap: Overlap between chunks
-            use_faiss: Use FAISS instead of ChromaDB
+            embedding_model: HuggingFace model for embeddings (default: intfloat/multilingual-e5-base)
+            chunk_size: Target chunk size in characters (for recursive chunker)
+            chunk_overlap: Overlap between chunks (for recursive chunker)
+            chunker_type: Type of chunker - 'recursive' (default) or 'semantic'
         """
         self.persist_directory = Path(persist_directory)
         self.persist_directory.mkdir(parents=True, exist_ok=True)
         
-        # Initialize components
-        self.parser = UniversalParser()
-        self.chunker = RecursiveChunker(
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-        )
+        # Initialize embedder (needed for semantic chunker)
         self.embedder = MultilingualEmbedder(
             model_name=embedding_model,
             use_query_prefix=('e5' in embedding_model.lower()),
         )
         
-        # Initialize vector database
-        if use_faiss:
-            self.vectordb = FAISSVectorDB(
-                collection_name=collection_name,
-                embedding_dimension=self.embedder.dimension,
-                persist_directory=str(self.persist_directory / 'faiss'),
+        # Initialize chunker based on type
+        if chunker_type == 'semantic':
+            if not SEMANTIC_CHUNKER_AVAILABLE:
+                raise ImportError(
+                    "SemanticChunker requires langchain-experimental. "
+                    "Install it with: pip install langchain-experimental"
+                )
+            # MultilingualEmbedder implements LangChain Embeddings interface
+            self.chunker = SemanticChunker(
+                embeddings=self.embedder,  # Can use directly!
+                breakpoint_threshold_type="percentile",  # or "standard_deviation", "interquartile"
             )
+            print(f"✅ Using SemanticChunker with {embedding_model}")
         else:
-            self.vectordb = ChromaVectorDB(
-                collection_name=collection_name,
-                embedding_dimension=self.embedder.dimension,
-                persist_directory=str(self.persist_directory / 'chroma'),
+            # Default: recursive chunker
+            self.chunker = RecursiveCharacterTextSplitter(
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+                separators=["\n\n\n", "\n\n", "\n", ". ", "? ", "! ", "; ", ", ", " ", ""],
+                keep_separator=True,
             )
+            print(f"✅ Using RecursiveCharacterTextSplitter (chunk_size={chunk_size})")
+        
+        # Initialize ChromaDB vector store (using LangChain)
+        self.vectorstore = Chroma(
+            collection_name=collection_name,
+            embedding_function=self.embedder,  # MultilingualEmbedder is LangChain-compatible!
+            persist_directory=str(self.persist_directory / 'chroma'),
+        )
+        print(f"✅ Using ChromaDB at {self.persist_directory / 'chroma'}")
+    
+    def _load_document(self, file_path: str) -> List[Document]:
+        """
+        Load document using DocumentLoader.
+        
+        Args:
+            file_path: Path to the document
+            
+        Returns:
+            List of Document objects (pages/sections)
+        """
+        return DocumentLoader.load(file_path)
     
     def add_document(
         self,
@@ -91,45 +132,22 @@ class RAGSystem:
         Returns:
             Number of chunks added
         """
-        # Parse document
-        doc = self.parser.parse(file_path)
+        # Load document using LangChain loader
+        docs = self._load_document(file_path)
         
-        # Chunk the document
-        chunks = self.chunker.split(
-            text=doc.content,
-            source_path=doc.source_path,
-            source_title=doc.title,
-            metadata=metadata,
-        )
+        # Add custom metadata if provided
+        if metadata:
+            for doc in docs:
+                doc.metadata.update(metadata)
+        
+        # Split documents into chunks
+        chunks = self.chunker.split_documents(docs)
         
         if not chunks:
             return 0
         
-        # Generate embeddings
-        texts = [chunk.text for chunk in chunks]
-        embeddings = self.embedder.encode_documents(texts, show_progress=True)
-        
-        # Prepare data for vector DB
-        ids = [chunk.chunk_id for chunk in chunks]
-        chunk_metadata = [
-            {
-                'source_path': chunk.source_path,
-                'source_title': chunk.source_title,
-                'chunk_index': chunk.chunk_index,
-                'start_char': chunk.start_char,
-                'end_char': chunk.end_char,
-                **chunk.metadata,
-            }
-            for chunk in chunks
-        ]
-        
-        # Add to vector database
-        self.vectordb.add(
-            ids=ids,
-            embeddings=embeddings,
-            texts=texts,
-            metadata=chunk_metadata,
-        )
+        # Add to Chroma (handles embeddings automatically!)
+        self.vectorstore.add_documents(chunks)
         
         return len(chunks)
     
@@ -146,25 +164,49 @@ class RAGSystem:
         Args:
             directory: Path to directory
             recursive: Search subdirectories
-            extensions: Filter by file extensions
-            batch_size: Process N documents at once (memory optimization)
+            extensions: Filter by file extensions (e.g. ['.pdf', '.txt'])
+            batch_size: Process N documents at once (not used currently)
             
         Returns:
             Dictionary of file paths to chunk counts
         """
         results = {}
-        docs = list(self.parser.parse_directory(directory, recursive, extensions))
         
-        print(f"Found {len(docs)} documents to process")
+        # Use DocumentLoader to find and load all files
+        files_with_docs = DocumentLoader.load_directory(
+            directory=directory,
+            recursive=recursive,
+            extensions=extensions
+        )
         
-        for i, doc in enumerate(docs, 1):
+        print(f"Found {len(files_with_docs)} documents to process")
+        
+        for i, (file_path, docs) in enumerate(files_with_docs, 1):
+            file_name = Path(file_path).name
+            
+            if not docs:
+                results[file_path] = "Error: Failed to load"
+                print(f"[{i}/{len(files_with_docs)}] ✗ {file_name}: Failed to load")
+                continue
+            
             try:
-                count = self.add_document(doc.source_path)
-                results[doc.source_path] = count
-                print(f"[{i}/{len(docs)}] ✓ {doc.source_path}: {count} chunks")
+                # Split into chunks
+                chunks = self.chunker.split_documents(docs)
+                
+                if not chunks:
+                    results[file_path] = 0
+                    print(f"[{i}/{len(files_with_docs)}] ⚠ {file_name}: 0 chunks")
+                    continue
+                
+                # Add to vector store
+                self.vectorstore.add_documents(chunks)
+                
+                results[file_path] = len(chunks)
+                print(f"[{i}/{len(files_with_docs)}] ✓ {file_name}: {len(chunks)} chunks")
+                
             except Exception as e:
-                results[doc.source_path] = f"Error: {e}"
-                print(f"[{i}/{len(docs)}] ✗ {doc.source_path}: {e}")
+                results[file_path] = f"Error: {e}"
+                print(f"[{i}/{len(files_with_docs)}] ✗ {file_name}: {e}")
         
         return results
     
@@ -185,15 +227,28 @@ class RAGSystem:
         Returns:
             List of SearchResult objects
         """
-        # Encode query
-        query_embedding = self.embedder.encode_query(query)
+        # Search using Chroma (handles embeddings automatically!)
+        search_kwargs = {'k': top_k}
+        if filter_metadata:
+            search_kwargs['filter'] = filter_metadata
         
-        # Search vector database
-        results = self.vectordb.search(
-            query_embedding=query_embedding,
-            top_k=top_k,
-            filter_metadata=filter_metadata,
+        docs_with_scores = self.vectorstore.similarity_search_with_score(
+            query, 
+            k=top_k,
+            filter=filter_metadata
         )
+        
+        # Convert to SearchResult objects
+        results = []
+        for doc, score in docs_with_scores:
+            # Note: Chroma returns distance, convert to similarity (lower is better)
+            # Convert to 0-1 range where higher is better
+            similarity = 1.0 / (1.0 + score)
+            results.append(SearchResult(
+                text=doc.page_content,
+                score=similarity,
+                metadata=doc.metadata,
+            ))
         
         return results
     
@@ -232,9 +287,22 @@ class RAGSystem:
     
     def count_documents(self) -> int:
         """Get total number of chunks in the database."""
-        return self.vectordb.count()
+        collection = self.vectorstore._collection
+        return collection.count()
     
     def clear(self) -> None:
         """Clear all documents from the database."""
-        self.vectordb.clear()
+        # Delete and recreate collection
+        collection = self.vectorstore._collection
+        collection.delete(where={})  # Delete all documents
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Get statistics about the RAG system."""
+        return {
+            'available': True,
+            'total_chunks': self.count_documents(),
+            'persist_directory': str(self.persist_directory),
+            'collection_name': self.vectorstore._collection.name,
+            'embedding_model': self.embedder.model_name,
+        }
 

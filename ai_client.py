@@ -19,6 +19,16 @@ if Config.AI_MODE == 'local':
         logger.error("Falling back to OpenRouter mode")
         Config.AI_MODE = 'openrouter'
 
+# Import translator if translation is enabled
+if Config.TRANSLATION_ENABLED:
+    try:
+        from translator import get_translator
+        logger.info("Translation enabled (RU <-> EN)")
+    except ImportError as e:
+        logger.error(f"Failed to import translator: {e}")
+        logger.warning("Translation will be disabled")
+        Config.TRANSLATION_ENABLED = False
+
 
 class AIClient:
     """Client for AI API interactions (OpenRouter or Local LLM)"""
@@ -32,6 +42,7 @@ class AIClient:
         # Initialize local LLM if in local mode
         self.local_llm = None
         self.rag_system = None
+        self.translator = None
         
         if self.mode == 'local':
             logger.info("Initializing Local LLM mode...")
@@ -45,6 +56,13 @@ class AIClient:
                             logger.info(f"RAG enabled: {count} chunks")
                         else:
                             logger.warning("RAG empty. Add docs: python rag_tools/add_documents.py /path")
+                
+                # Initialize translator if enabled
+                if Config.TRANSLATION_ENABLED:
+                    logger.info("Initializing translator (RU <-> EN)...")
+                    self.translator = get_translator(device=Config.TRANSLATION_DEVICE)
+                    logger.info("Translator initialized successfully")
+                
                 logger.info("Local LLM initialized successfully")
             except Exception as e:
                 logger.error(f"Failed to initialize local LLM: {e}")
@@ -98,48 +116,105 @@ class AIClient:
     
     def _generate_local(self, user_prompt: str, system_prompt: str) -> str:
         """
-        Generate response using local LLM
+        Generate response using local LLM with optional translation.
+        
+        Pipeline with translation:
+        1. User query (RU) → RAG → context (RU)
+        2. Translate query + context → English
+        3. Generate response in English
+        4. Translate response → Russian
         
         Args:
-            user_prompt: User's question or request
+            user_prompt: User's question or request (Russian)
             system_prompt: System prompt
             
         Returns:
-            AI generated response
+            AI generated response (Russian)
         """
         try:
-            # Add RAG context if enabled
-            enhanced_prompt = user_prompt
-            
+            # Step 1: Get RAG context (in Russian)
+            rag_context = None
             if self.rag_system and Config.RAG_ENABLED:
                 logger.info("Retrieving RAG context")
                 try:
-                    context = self.rag_system.get_context(
+                    rag_context = self.rag_system.get_context(
                         user_prompt, 
                         top_k=Config.RAG_TOP_K,
                         max_tokens=Config.RAG_MAX_CONTEXT
                     )
+                    if rag_context:
+                        logger.info(f"Retrieved RAG context ({len(rag_context)} chars)")
+                except Exception as e:
+                    logger.error(f"RAG context failed: {e}")
+                    rag_context = None
+            
+            # Step 2: Translate to English if enabled
+            working_prompt = user_prompt
+            working_context = rag_context
+            
+            if self.translator and Config.TRANSLATION_ENABLED:
+                logger.info("Translating query and context to English...")
+                try:
+                    # Translate user query
+                    working_prompt = self.translator.translate_ru_to_en(user_prompt)
+                    logger.info(f"Translated query: '{user_prompt[:50]}...' -> '{working_prompt[:50]}...'")
                     
-                    if context:
-                        enhanced_prompt = f"""Используй следующий контекст для ответа:
+                    # Translate RAG context if available
+                    if rag_context:
+                        working_context = self.translator.translate_ru_to_en(rag_context)
+                        logger.info(f"Translated context ({len(working_context)} chars)")
+                    
+                    # Update system prompt for English
+                    system_prompt = system_prompt.replace(
+                        "Всегда отвечай на русском языке",
+                        "Always respond in English"
+                    ).replace(
+                        "Отвечай ТОЛЬКО на русском языке",
+                        "Respond ONLY in English"
+                    ).replace(
+                        "Отвечай на русском языке",
+                        "Respond in English"
+                    )
+                    
+                except Exception as e:
+                    logger.error(f"Translation to English failed: {e}")
+                    logger.warning("Falling back to Russian")
+                    working_prompt = user_prompt
+                    working_context = rag_context
+            
+            # Step 3: Build enhanced prompt
+            if working_context:
+                enhanced_prompt = f"""Use the following context to answer:
 
-{context}
+{working_context}
 
 ---
 
-Вопрос: {user_prompt}"""
-                        logger.info(f"Added RAG context ({len(context)} chars)")
-                except Exception as e:
-                    logger.error(f"RAG context failed: {e}")
+Question: {working_prompt}"""
+            else:
+                enhanced_prompt = working_prompt
             
             logger.info(f"Generating response with local LLM (temp={Config.LOCAL_MODEL_TEMPERATURE})")
             
+            # Step 4: Generate response
             response = self.local_llm.chat(
                 system_message=system_prompt,
                 user_message=enhanced_prompt,
                 max_tokens=1024,
                 temperature=Config.LOCAL_MODEL_TEMPERATURE
             )
+            
+            logger.info(f"Generated response (length: {len(response)})")
+            
+            # Step 5: Translate back to Russian if needed
+            if self.translator and Config.TRANSLATION_ENABLED:
+                logger.info("Translating response back to Russian...")
+                try:
+                    response = self.translator.translate_en_to_ru(response)
+                    logger.info(f"Translated response back to Russian ({len(response)} chars)")
+                except Exception as e:
+                    logger.error(f"Translation to Russian failed: {e}")
+                    logger.warning("Returning English response")
             
             logger.info(f"Successfully generated local response (length: {len(response)})")
             return response

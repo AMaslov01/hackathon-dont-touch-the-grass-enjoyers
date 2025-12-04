@@ -56,37 +56,18 @@ print(context)
 - **E5 embeddings**: Использует state-of-the-art модель `intfloat/multilingual-e5-base`
 - **Автоматический парсинг**: Определяет формат документа автоматически
 - **Persistent storage**: Данные сохраняются на диске (ChromaDB или FAISS)
-- **Настраиваемый chunking**: RecursiveChunker с поддержкой overlap
+- **LangChain chunking**: Использует проверенный RecursiveCharacterTextSplitter с поддержкой overlap
 
 ## 🏗️ Структура проекта
 
 ```
 ragBaseMaker/
-├── index_documents.py          # Скрипт для индексации документов
-├── rag_system.py              # Основная RAG система
+├── rag_system.py              # Основная RAG система (полностью на LangChain!)
+├── document_loader.py         # Загрузка документов (обертка над LangChain loaders)
 ├── requirements.txt           # Зависимости
 │
-├── embeddings/                # Модуль эмбеддингов
-│   ├── multilingual_embedder.py
-│   └── __init__.py
-│
-├── chunking/                  # Модуль разбиения текста
-│   ├── base_chunker.py
-│   ├── recursive_chunker.py
-│   ├── semantic_chunker.py
-│   └── __init__.py
-│
-├── parsers/                   # Парсеры документов
-│   ├── universal_parser.py    # Автоматический выбор парсера
-│   ├── pdf_parser.py
-│   ├── docx_parser.py
-│   ├── excel_parser.py
-│   └── ...
-│
-└── vectordb/                  # Vector databases
-    ├── chroma_db.py
-    ├── faiss_db.py
-    └── __init__.py
+└── embeddings/                # Модуль эмбеддингов
+    └── multilingual_embedder.py  # Совместим с LangChain!
 ```
 
 ## ⚙️ Конфигурация
@@ -96,9 +77,9 @@ rag = RAGSystem(
     persist_directory='./rag_data',              # Где хранить базу
     collection_name='documents',                 # Имя коллекции
     embedding_model='intfloat/multilingual-e5-base',  # Модель эмбеддингов
-    chunk_size=512,                              # Размер чанка
+    chunk_size=512,                              # Размер чанка (для recursive)
     chunk_overlap=50,                            # Overlap между чанками
-    use_faiss=False,                             # True для FAISS вместо Chroma
+    chunker_type='recursive',                    # 'recursive' или 'semantic'
 )
 ```
 

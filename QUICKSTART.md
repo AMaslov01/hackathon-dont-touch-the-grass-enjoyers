@@ -166,30 +166,52 @@ sudo journalctl -u telegram-bot -f
 
 ### Загрузка документов
 
+#### Один файл
+```bash
+# Загрузить один документ
+python3 rag_tools/add_documents.py document.pdf
+python3 rag_tools/add_documents.py report.docx
+python3 rag_tools/add_documents.py data.xlsx
+```
+
+#### Папка с документами
+```bash
+# Загрузить все документы из папки (только текущая папка)
+python3 rag_tools/add_documents.py /path/to/documents
+
+# Загрузить все документы включая подпапки (рекурсивно)
+python3 rag_tools/add_documents.py /path/to/documents --recursive
+
+# Пример: загрузить все из папки test_documents
+python3 rag_tools/add_documents.py test_documents --recursive
+
+# С семантическим чанкингом (качественнее, но медленнее)
+python3 rag_tools/add_documents.py /path/to/documents --semantic --recursive
+```
+
+#### Используя скрипт
 ```bash
 # Загрузить тестовые данные
 ./load_documents.sh test_documents
 
 # Или свои документы
 ./load_documents.sh /path/to/documents
-
-# Или напрямую
-python3 rag_tools/add_documents.py document.pdf
-python3 rag_tools/add_documents.py /path/to/folder --recursive
 ```
 
 ### Поддерживаемые форматы
-- PDF, Word, Excel, PowerPoint
-- TXT, Markdown, HTML
+- **Документы:** PDF, DOCX, DOC
+- **Таблицы:** XLSX, XLS
+- **Текст:** TXT, MD (Markdown)
+- **Другие:** HTML, JSON
 
 ### Проверка RAG
 
 ```bash
 # Статистика
-python3 rag_tools/manage_rag.py --stats
+python3 rag_tools/manage_rag.py stats
 
-# Поиск
-python3 rag_tools/search_documents.py "ВВП России"
+# Тестирование поиска
+python3 rag_tools/manage_rag.py test
 ```
 
 ### Тестирование в боте

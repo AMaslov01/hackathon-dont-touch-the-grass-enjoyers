@@ -24,15 +24,19 @@ chromadb>=0.4.0
 numpy>=1.24.0
 tqdm>=4.66.0
 pydantic>=2.0.0
+langchain>=0.1.0
+langchain-text-splitters>=0.0.1
+langchain-experimental>=0.0.1
 
-# Document parsers (for RAG)
-PyPDF2>=3.0.0
+# Translation (for models trained on English)
+sentencepiece>=0.1.99  # Required for OPUS-MT models
+sacremoses>=0.0.53  # Required for some translation models
+
+# Document loaders (for RAG via LangChain)
+pypdf>=3.0.0
 python-docx>=1.0.0
-beautifulsoup4>=4.12.0
-markdown>=3.5.0
-openpyxl>=3.1.0
-python-pptx>=0.6.21
-chardet>=5.2.0
+openpyxl>=3.1.0  # For Excel files
+unstructured>=0.10.0
 
 # Development tools (optional)
 pyright>=1.1.0

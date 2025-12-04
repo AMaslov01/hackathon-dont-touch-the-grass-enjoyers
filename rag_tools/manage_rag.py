@@ -15,7 +15,50 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from rag_integration import get_bot_rag, is_rag_available, RAG_AVAILABLE
+try:
+    from ragBaseMaker.rag_system import RAGSystem
+    RAG_AVAILABLE = True
+except ImportError as e:
+    print(f"❌ Ошибка: не удалось импортировать RAG систему")
+    print(f"   Запустите: python copy_ragbasemaker.py")
+    print(f"   Ошибка: {e}")
+    RAG_AVAILABLE = False
+    RAGSystem = None
+
+
+def get_rag_instance():
+    """Get RAG instance for management tools."""
+    if not RAG_AVAILABLE:
+        return None
+    
+    rag_data_dir = Path(__file__).parent.parent / 'rag_data'
+    
+    try:
+        return RAGSystem(
+            persist_directory=str(rag_data_dir),
+            collection_name='financial_docs',
+            embedding_model='intfloat/multilingual-e5-base',
+            chunk_size=512,
+            chunk_overlap=50,
+        )
+    except Exception as e:
+        print(f"❌ Ошибка инициализации RAG: {e}")
+        return None
+
+
+def is_rag_available():
+    """Check if RAG is available and has documents."""
+    if not RAG_AVAILABLE:
+        return False
+    
+    rag = get_rag_instance()
+    if not rag:
+        return False
+    
+    try:
+        return rag.count_documents() > 0
+    except:
+        return False
 
 
 def show_stats():
@@ -30,7 +73,7 @@ def show_stats():
         return
     
     try:
-        rag = get_bot_rag()
+        rag = get_rag_instance()
         if not rag:
             print("\n❌ Не удалось инициализировать RAG систему")
             return
@@ -67,7 +110,7 @@ def clear_database():
         return
     
     try:
-        rag = get_bot_rag()
+        rag = get_rag_instance()
         if not rag:
             print("\n❌ Не удалось инициализировать RAG систему")
             return
@@ -76,7 +119,7 @@ def clear_database():
         count_before = rag.count_documents()
         
         print(f"\n🗑️  Удаляю {count_before} чанков...")
-        rag.rag.clear()
+        rag.clear()
         
         count_after = rag.count_documents()
         print(f"✅ База данных очищена ({count_before} → {count_after})")
@@ -98,7 +141,7 @@ def test_rag():
         return
     
     try:
-        rag = get_bot_rag()
+        rag = get_rag_instance()
         if not rag:
             print("\n❌ Не удалось инициализировать RAG систему")
             return

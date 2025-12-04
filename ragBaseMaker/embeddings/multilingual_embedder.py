@@ -1,13 +1,24 @@
 """
 Multilingual embedder using Sentence Transformers.
 Optimized for Russian + English RAG applications.
+Compatible with LangChain Embeddings interface.
 """
 
 from typing import List, Union, Optional, Tuple
 import numpy as np
 
+try:
+    from langchain.embeddings.base import Embeddings
+    LANGCHAIN_AVAILABLE = True
+except ImportError:
+    # Fallback if LangChain not installed
+    LANGCHAIN_AVAILABLE = False
+    class Embeddings:  # type: ignore
+        """Dummy base class when LangChain not available."""
+        pass
 
-class MultilingualEmbedder:
+
+class MultilingualEmbedder(Embeddings):
     """
     Multilingual embedding model using Sentence Transformers.
     
@@ -196,4 +207,32 @@ class MultilingualEmbedder:
             ))
         
         return results
+    
+    # LangChain Embeddings interface methods
+    
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        """
+        Embed documents for LangChain compatibility.
+        
+        Args:
+            texts: List of texts to embed
+            
+        Returns:
+            List of embeddings (each is a list of floats)
+        """
+        embeddings = self.encode_documents(texts, show_progress=False)
+        return embeddings.tolist()
+    
+    def embed_query(self, text: str) -> List[float]:
+        """
+        Embed a query for LangChain compatibility.
+        
+        Args:
+            text: Query text
+            
+        Returns:
+            Embedding as list of floats
+        """
+        embedding = self.encode_query(text)
+        return embedding.tolist()
 

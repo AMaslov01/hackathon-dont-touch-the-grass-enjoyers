@@ -37,13 +37,16 @@ def main():
         print(f"  python {sys.argv[0]} /path/to/documents")
         print(f"  python {sys.argv[0]} document.pdf")
         print(f"  python {sys.argv[0]} /path/to/documents --recursive")
+        print(f"  python {sys.argv[0]} /path/to/documents --semantic")
         print("\nПримеры:")
         print(f"  python {sys.argv[0]} ./financial_reports")
         print(f"  python {sys.argv[0]} ./annual_report_2023.pdf")
+        print(f"  python {sys.argv[0]} ./important_docs --semantic  # Семантический чанкинг")
         sys.exit(1)
     
     target_path = Path(sys.argv[1])
     recursive = '--recursive' in sys.argv or '-r' in sys.argv
+    use_semantic = '--semantic' in sys.argv or '-s' in sys.argv
     
     # Check if path exists
     if not target_path.exists():
@@ -56,6 +59,7 @@ def main():
     print(f"\n📁 Источник:         {target_path.absolute()}")
     print(f"💾 База RAG:         {rag_data_dir.absolute()}")
     print(f"🔄 Рекурсивно:       {'Да' if recursive else 'Нет'}")
+    print(f"🧠 Чанкер:           {'Semantic (качественный)' if use_semantic else 'Recursive (быстрый)'}")
     print()
     
     # Initialize RAG system
@@ -67,6 +71,7 @@ def main():
             embedding_model='intfloat/multilingual-e5-base',
             chunk_size=512,
             chunk_overlap=50,
+            chunker_type='semantic' if use_semantic else 'recursive',
         )
     except Exception as e:
         print(f"❌ Ошибка инициализации RAG: {e}")
