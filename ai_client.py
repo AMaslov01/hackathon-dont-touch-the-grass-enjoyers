@@ -1,5 +1,5 @@
 """
-AI Client for interacting with OpenRouter API
+AI Client for interacting with OpenRouter API or Local LLM
 """
 import logging
 import requests
@@ -8,14 +8,66 @@ from config import Config
 
 logger = logging.getLogger(__name__)
 
+# Import local LLM and RAG only if in local mode
+if Config.AI_MODE == 'local':
+    try:
+        from local_llm import get_local_llm
+        from rag_integration import get_rag as get_bot_rag
+        logger.info("Local LLM mode enabled")
+    except ImportError as e:
+        logger.error(f"Failed to import local LLM modules: {e}")
+        logger.error("Falling back to OpenRouter mode")
+        Config.AI_MODE = 'openrouter'
+
+# Import translator if translation is enabled
+if Config.TRANSLATION_ENABLED:
+    try:
+        from translator import get_translator
+        logger.info("Translation enabled (RU <-> EN)")
+    except ImportError as e:
+        logger.error(f"Failed to import translator: {e}")
+        logger.warning("Translation will be disabled")
+        Config.TRANSLATION_ENABLED = False
+
 
 class AIClient:
-    """Client for AI API interactions"""
+    """Client for AI API interactions (OpenRouter or Local LLM)"""
     
     def __init__(self):
+        self.mode = Config.AI_MODE
         self.api_url = Config.OPENROUTER_API_URL
         self.api_key = Config.OPENROUTER_API_KEY
         self.model = Config.AI_MODEL
+        
+        # Initialize local LLM if in local mode
+        self.local_llm = None
+        self.rag_system = None
+        self.translator = None
+        
+        if self.mode == 'local':
+            logger.info("Initializing Local LLM mode...")
+            try:
+                self.local_llm = get_local_llm(n_threads=Config.LOCAL_MODEL_THREADS)
+                if Config.RAG_ENABLED:
+                    self.rag_system = get_bot_rag(persist_directory=Config.RAG_PERSIST_DIR)
+                    if self.rag_system:
+                        count = self.rag_system.count_documents()
+                        if count > 0:
+                            logger.info(f"RAG enabled: {count} chunks")
+                        else:
+                            logger.warning("RAG empty. Add docs: python rag_tools/add_documents.py /path")
+                
+                # Initialize translator if enabled
+                if Config.TRANSLATION_ENABLED:
+                    logger.info("Initializing translator (RU <-> EN)...")
+                    self.translator = get_translator(device=Config.TRANSLATION_DEVICE)
+                    logger.info("Translator initialized successfully")
+                
+                logger.info("Local LLM initialized successfully")
+            except Exception as e:
+                logger.error(f"Failed to initialize local LLM: {e}")
+                logger.error("Falling back to OpenRouter mode")
+                self.mode = 'openrouter'
         
         # System prompt to make responses in Russian
         self.system_prompt = (
@@ -53,6 +105,135 @@ class AIClient:
         Raises:
             Exception: If API call fails
         """
+        system_msg = system_prompt or self.system_prompt
+        
+        # Use local LLM if in local mode
+        if self.mode == 'local' and self.local_llm is not None:
+            return self._generate_local(user_prompt, system_msg)
+        
+        # Otherwise use OpenRouter API
+        return self._generate_openrouter(user_prompt, system_msg)
+    
+    def _generate_local(self, user_prompt: str, system_prompt: str) -> str:
+        """
+        Generate response using local LLM with optional translation.
+        
+        Pipeline with translation:
+        1. User query (RU) → RAG → context (RU)
+        2. Translate query + context → English
+        3. Generate response in English
+        4. Translate response → Russian
+        
+        Args:
+            user_prompt: User's question or request (Russian)
+            system_prompt: System prompt
+            
+        Returns:
+            AI generated response (Russian)
+        """
+        try:
+            # Step 1: Get RAG context (in Russian)
+            rag_context = None
+            if self.rag_system and Config.RAG_ENABLED:
+                logger.info("Retrieving RAG context")
+                try:
+                    rag_context = self.rag_system.get_context(
+                        user_prompt, 
+                        top_k=Config.RAG_TOP_K,
+                        max_tokens=Config.RAG_MAX_CONTEXT
+                    )
+                    if rag_context:
+                        logger.info(f"Retrieved RAG context ({len(rag_context)} chars)")
+                except Exception as e:
+                    logger.error(f"RAG context failed: {e}")
+                    rag_context = None
+            
+            # Step 2: Translate to English if enabled
+            working_prompt = user_prompt
+            working_context = rag_context
+            
+            if self.translator and Config.TRANSLATION_ENABLED:
+                logger.info("Translating query and context to English...")
+                try:
+                    # Translate user query
+                    working_prompt = self.translator.translate_ru_to_en(user_prompt)
+                    logger.info(f"Translated query: '{user_prompt[:50]}...' -> '{working_prompt[:50]}...'")
+                    
+                    # Translate RAG context if available
+                    if rag_context:
+                        working_context = self.translator.translate_ru_to_en(rag_context)
+                        logger.info(f"Translated context ({len(working_context)} chars)")
+                    
+                    # Update system prompt for English
+                    system_prompt = system_prompt.replace(
+                        "Всегда отвечай на русском языке",
+                        "Always respond in English"
+                    ).replace(
+                        "Отвечай ТОЛЬКО на русском языке",
+                        "Respond ONLY in English"
+                    ).replace(
+                        "Отвечай на русском языке",
+                        "Respond in English"
+                    )
+                    
+                except Exception as e:
+                    logger.error(f"Translation to English failed: {e}")
+                    logger.warning("Falling back to Russian")
+                    working_prompt = user_prompt
+                    working_context = rag_context
+            
+            # Step 3: Build enhanced prompt
+            if working_context:
+                enhanced_prompt = f"""Use the following context to answer:
+
+{working_context}
+
+---
+
+Question: {working_prompt}"""
+            else:
+                enhanced_prompt = working_prompt
+            
+            logger.info(f"Generating response with local LLM (temp={Config.LOCAL_MODEL_TEMPERATURE})")
+            
+            # Step 4: Generate response
+            response = self.local_llm.chat(
+                system_message=system_prompt,
+                user_message=enhanced_prompt,
+                max_tokens=1024,
+                temperature=Config.LOCAL_MODEL_TEMPERATURE
+            )
+            
+            logger.info(f"Generated response (length: {len(response)})")
+            
+            # Step 5: Translate back to Russian if needed
+            if self.translator and Config.TRANSLATION_ENABLED:
+                logger.info("Translating response back to Russian...")
+                try:
+                    response = self.translator.translate_en_to_ru(response)
+                    logger.info(f"Translated response back to Russian ({len(response)} chars)")
+                except Exception as e:
+                    logger.error(f"Translation to Russian failed: {e}")
+                    logger.warning("Returning English response")
+            
+            logger.info(f"Successfully generated local response (length: {len(response)})")
+            return response
+            
+        except Exception as e:
+            logger.error(f"Local LLM generation failed: {e}")
+            raise Exception(f"Local LLM error: {str(e)}")
+    
+    def _generate_openrouter(self, user_prompt: str, system_prompt: str) -> str:
+        """
+        Generate response using OpenRouter API
+        
+        Args:
+            user_prompt: User's question or request
+            system_prompt: System prompt
+            
+        Returns:
+            AI generated response
+        """
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -63,7 +244,7 @@ class AIClient:
             "messages": [
                 {
                     "role": "system",
-                    "content": system_prompt or self.system_prompt
+                    "content": system_prompt
                 },
                 {
                     "role": "user",
@@ -73,7 +254,7 @@ class AIClient:
         }
         
         try:
-            logger.info(f"Sending request to AI API with model: {self.model}")
+            logger.info(f"Sending request to OpenRouter API with model: {self.model}")
             response = requests.post(
                 self.api_url, 
                 headers=headers, 
@@ -85,30 +266,30 @@ class AIClient:
             result = response.json()
             ai_response = result['choices'][0]['message']['content']
             
-            logger.info(f"Successfully received AI response (length: {len(ai_response)})")
+            logger.info(f"Successfully received OpenRouter response (length: {len(ai_response)})")
             return ai_response
             
         except requests.exceptions.HTTPError as e:
-            logger.error(f"AI API HTTP error: {e}")
+            logger.error(f"OpenRouter API HTTP error: {e}")
             logger.error(f"Response status: {response.status_code}")
             logger.error(f"Response body: {response.text[:500]}")
-            raise Exception(f"AI API error: {response.status_code}")
+            raise Exception(f"OpenRouter API error: {response.status_code}")
             
         except requests.exceptions.Timeout:
-            logger.error("AI API request timeout")
-            raise Exception("AI API timeout")
+            logger.error("OpenRouter API request timeout")
+            raise Exception("OpenRouter API timeout")
             
         except requests.exceptions.RequestException as e:
-            logger.error(f"AI API request failed: {e}")
-            raise Exception("AI API connection error")
+            logger.error(f"OpenRouter API request failed: {e}")
+            raise Exception("OpenRouter API connection error")
             
         except (KeyError, IndexError) as e:
-            logger.error(f"Failed to parse AI response: {e}")
+            logger.error(f"Failed to parse OpenRouter response: {e}")
             logger.error(f"Response: {response.text[:500]}")
-            raise Exception("Invalid AI response format")
+            raise Exception("Invalid OpenRouter response format")
         
         except Exception as e:
-            logger.error(f"Unexpected error in AI client: {e}")
+            logger.error(f"Unexpected error in OpenRouter client: {e}")
             raise
     
     def generate_financial_plan(self, business_info: dict) -> str:
