@@ -1715,14 +1715,17 @@ async def task_deadline_handler(update: Update, context: ContextTypes.DEFAULT_TY
     text = update.message.text.strip()
 
     try:
-        deadline_minutes = int(text)
-        if deadline_minutes <= 0:
+        deadline_hours = int(text)
+        if deadline_hours <= 0:
             await update.message.reply_text(
                 "❌ Дедлайн должен быть положительным числом. Попробуйте еще раз:",
                 parse_mode='Markdown'
             )
             return TASK_DEADLINE
 
+        # Convert hours to minutes for storage
+        deadline_minutes = deadline_hours * 60
+        
         # Save deadline in context
         context.user_data['task_deadline'] = deadline_minutes
 
@@ -1735,7 +1738,7 @@ async def task_deadline_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
     except ValueError:
         await update.message.reply_text(
-            "❌ Неверный формат. Укажите число (дедлайн в минутах):",
+            "❌ Неверный формат. Укажите число (дедлайн в часах):",
             parse_mode='Markdown'
         )
         return TASK_DEADLINE
@@ -1879,12 +1882,11 @@ async def available_tasks_command(update: Update, context: ContextTypes.DEFAULT_
             if task.get('priority'):
                 tasks_text += f"🎯 Приоритет: {task['priority']}\n"
             if task.get('deadline_minutes'):
-                hours = task['deadline_minutes'] // 60
-                minutes = task['deadline_minutes'] % 60
-                if hours > 0:
-                    tasks_text += f"⏰ Дедлайн: {hours} ч {minutes} мин\n"
+                hours = task['deadline_minutes'] / 60
+                if hours >= 1:
+                    tasks_text += f"⏰ Дедлайн: {hours:.1f} ч\n"
                 else:
-                    tasks_text += f"⏰ Дедлайн: {minutes} мин\n"
+                    tasks_text += f"⏰ Дедлайн: {task['deadline_minutes']} мин\n"
             if task.get('description'):
                 desc = task['description'][:100]
                 if len(task['description']) > 100:
@@ -2645,13 +2647,22 @@ async def review_task_id_handler(update: Update, context: ContextTypes.DEFAULT_T
         escaped_employee = escape_markdown(employee)
         escaped_description = escape_markdown(task.get('description', 'Нет описания'))
         
+        # Format deadline in hours
+        deadline_str = 'Не указан'
+        if task.get('deadline_minutes'):
+            hours = task['deadline_minutes'] / 60
+            if hours >= 1:
+                deadline_str = f"{hours:.1f} ч"
+            else:
+                deadline_str = f"{task['deadline_minutes']} мин"
+        
         response_text = MESSAGES['review_task_info'].format(
             task_id=task['id'],
             title=escaped_title,
             employee=escaped_employee,
             difficulty=task.get('difficulty', 'Не указана'),
             priority=task.get('priority', 'Не указан'),
-            deadline=task.get('deadline_minutes', 'Не указан'),
+            deadline=deadline_str,
             time_taken=time_taken_str,
             description=escaped_description
         )
@@ -2724,14 +2735,16 @@ async def review_task_decision_handler(update: Update, context: ContextTypes.DEF
             parts = text.split()
             if len(parts) != 2:
                 await update.message.reply_text(
-                    "❌ Неверный формат. Используйте: `доработка [минуты]`\nНапример: `доработка 120`",
+                    "❌ Неверный формат. Используйте: `доработка [часы]`\nНапример: `доработка 2`",
                     parse_mode='Markdown'
                 )
                 return REVIEW_TASK_DECISION
             
             try:
-                new_deadline = int(parts[1])
-                success, message = user_manager.send_task_for_revision(user_id, task_id, new_deadline)
+                new_deadline_hours = int(parts[1])
+                # Convert hours to minutes
+                new_deadline_minutes = new_deadline_hours * 60
+                success, message = user_manager.send_task_for_revision(user_id, task_id, new_deadline_minutes)
                 if success:
                     # Escape markdown in message
                     escaped_message = escape_markdown(message)
@@ -2750,7 +2763,7 @@ async def review_task_decision_handler(update: Update, context: ContextTypes.DEF
                                 text=MESSAGES['notification_task_revision'].format(
                                     task_id=task_id,
                                     title=escaped_title,
-                                    deadline=new_deadline
+                                    deadline=new_deadline_hours
                                 ),
                                 parse_mode='Markdown'
                             )
