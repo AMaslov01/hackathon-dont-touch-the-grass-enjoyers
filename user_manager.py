@@ -321,6 +321,60 @@ class UserManager:
         """
         return self.get_executors_info(user_id) is not None
 
+    def get_user_info(self, user_id: int) -> Optional[str]:
+        """
+        Get user's personal description
+        
+        Args:
+            user_id: Telegram user ID
+            
+        Returns:
+            User info string or None
+        """
+        return user_repo.get_user_info(user_id)
+
+    def save_user_info(self, user_id: int, user_info: str) -> bool:
+        """
+        Save user's personal description
+        
+        Args:
+            user_id: Telegram user ID
+            user_info: User's personal description
+            
+        Returns:
+            True if saved successfully, False otherwise
+        """
+        try:
+            return user_repo.save_user_info(user_id, user_info)
+        except Exception as e:
+            logger.error(f"Failed to save user info for user {user_id}: {e}")
+            return False
+
+    def has_user_info(self, user_id: int) -> bool:
+        """
+        Check if user has filled their personal description
+        
+        Args:
+            user_id: Telegram user ID
+            
+        Returns:
+            True if user has info, False otherwise
+        """
+        info = self.get_user_info(user_id)
+        return info is not None and len(info.strip()) > 0
+
+    def get_users_without_business_or_job(self, exclude_user_id: int = None) -> list:
+        """
+        Get users who are not business owners and not currently employed
+        
+        Args:
+            exclude_user_id: User ID to exclude from results
+            
+        Returns:
+            List of user dictionaries with user_id, username, first_name, user_info, overall_rating
+        """
+        return user_repo.get_users_without_business_or_job(exclude_user_id)
+
     # Business and employee management methods
 
     def get_business(self, user_id: int) -> Optional[dict]:
