@@ -189,7 +189,7 @@ class UserManager:
             True if saved successfully, False otherwise
         """
         try:
-            business_repo.save_or_update_business(
+            business_repo.create_business(
                 owner_id=user_id,
                 business_name=business_name,
                 business_type=business_type,
@@ -378,12 +378,68 @@ class UserManager:
     # Business and employee management methods
 
     def get_business(self, user_id: int) -> Optional[dict]:
-        """Get business owned by user"""
-        return business_repo.get_business(user_id)
+        """Get active business owned by user"""
+        return business_repo.get_active_business(user_id)
+    
+    def get_active_business(self, user_id: int) -> Optional[dict]:
+        """Get active business for user"""
+        return business_repo.get_active_business(user_id)
+    
+    def get_all_user_businesses(self, user_id: int) -> list:
+        """Get all businesses owned by user"""
+        return business_repo.get_all_user_businesses(user_id)
+    
+    def set_active_business(self, user_id: int, business_id: int) -> tuple[bool, str]:
+        """
+        Set active business for user
+        
+        Args:
+            user_id: User ID
+            business_id: Business ID to set as active
+            
+        Returns:
+            Tuple of (success, message)
+        """
+        success = business_repo.set_active_business(user_id, business_id)
+        if success:
+            return True, "Активный бизнес успешно изменен"
+        else:
+            return False, "Не удалось изменить активный бизнес. Возможно, он вам не принадлежит."
+    
+    def delete_business(self, user_id: int, business_id: int) -> tuple[bool, str]:
+        """
+        Delete business with cascade deletion
+        
+        Args:
+            user_id: User ID
+            business_id: Business ID to delete
+            
+        Returns:
+            Tuple of (success, message)
+        """
+        # Check that user has more than one business or confirm deletion of last one
+        businesses = self.get_all_user_businesses(user_id)
+        
+        if not any(b['id'] == business_id for b in businesses):
+            return False, "Бизнес не найден или не принадлежит вам"
+        
+        success = business_repo.delete_business(user_id, business_id)
+        if success:
+            remaining = len(businesses) - 1
+            if remaining > 0:
+                return True, f"Бизнес удален. У вас осталось бизнесов: {remaining}"
+            else:
+                return True, "Бизнес удален. У вас больше нет бизнесов."
+        else:
+            return False, "Не удалось удалить бизнес"
 
     def is_business_owner(self, user_id: int) -> bool:
-        """Check if user is a business owner"""
+        """Check if user is a business owner (has at least one business)"""
         return business_repo.is_business_owner(user_id)
+    
+    def has_active_business(self, user_id: int) -> bool:
+        """Check if user has an active business"""
+        return business_repo.has_active_business(user_id)
 
     def is_employee(self, user_id: int, business_id: int = None) -> bool:
         """Check if user is an employee"""
@@ -395,7 +451,7 @@ class UserManager:
 
     def invite_employee(self, owner_id: int, target_username: str) -> tuple[bool, str]:
         """
-        Invite an employee to business
+        Invite an employee to active business
         
         Args:
             owner_id: Business owner user ID
@@ -404,10 +460,10 @@ class UserManager:
         Returns:
             Tuple of (success, message)
         """
-        # Check if owner has a business
-        business = business_repo.get_business(owner_id)
+        # Check if owner has an active business
+        business = business_repo.get_active_business(owner_id)
         if not business:
-            return False, "У вас нет бизнеса. Сначала создайте бизнес через /finance"
+            return False, "У вас нет активного бизнеса. Сначала создайте бизнес через /create_business"
 
         # Find target user
         target_user_id = business_repo.get_user_by_username(target_username)
@@ -447,7 +503,7 @@ class UserManager:
 
     def remove_employee(self, owner_id: int, employee_user_id: int) -> tuple[bool, str]:
         """
-        Remove an employee from business
+        Remove an employee from active business
         
         Args:
             owner_id: Business owner user ID
@@ -456,9 +512,9 @@ class UserManager:
         Returns:
             Tuple of (success, message)
         """
-        business = business_repo.get_business(owner_id)
+        business = business_repo.get_active_business(owner_id)
         if not business:
-            return False, "У вас нет бизнеса"
+            return False, "У вас нет активного бизнеса"
 
         success = business_repo.remove_employee(business['id'], employee_user_id)
         if success:
@@ -487,10 +543,10 @@ class UserManager:
         """
         from ai_client import ai_client
 
-        # Check if user is business owner
-        business = business_repo.get_business(owner_id)
+        # Check if user has active business
+        business = business_repo.get_active_business(owner_id)
         if not business:
-            return False, "У вас нет бизнеса", None
+            return False, "У вас нет активного бизнеса", None
 
         # Get employees task history
         employees_history = business_repo.get_all_employees_task_history(business['id'])
@@ -568,10 +624,10 @@ class UserManager:
     def assign_task_to_employee(self, owner_id: int, task_id: int,
                                 employee_user_id: int) -> tuple[bool, str]:
         """Owner assigns task to specific employee"""
-        # Check if owner has business
-        business = business_repo.get_business(owner_id)
+        # Check if owner has active business
+        business = business_repo.get_active_business(owner_id)
         if not business:
-            return False, "У вас нет бизнеса"
+            return False, "У вас нет активного бизнеса"
 
         # Check if task belongs to this business
         task = business_repo.get_task(task_id)
@@ -628,8 +684,8 @@ class UserManager:
             return False, "Не удалось отправить задачу. Возможно, она не назначена вам."
 
     def get_business_all_tasks(self, owner_id: int) -> list:
-        """Owner gets all tasks of their business"""
-        business = business_repo.get_business(owner_id)
+        """Owner gets all tasks of their active business"""
+        business = business_repo.get_active_business(owner_id)
         if not business:
             return []
         return business_repo.get_business_tasks(business['id'])
@@ -664,7 +720,7 @@ class UserManager:
     
     def get_submitted_tasks(self, owner_id: int) -> list:
         """Get all tasks submitted for review"""
-        business = business_repo.get_business(owner_id)
+        business = business_repo.get_active_business(owner_id)
         if not business:
             return []
         return business_repo.get_submitted_tasks(business['id'])
@@ -685,10 +741,10 @@ class UserManager:
         if not (0.5 <= quality_coefficient <= 1.0):
             return False, "Коэффициент качества должен быть от 0.5 до 1.0", None
         
-        # Check if user is business owner
-        business = business_repo.get_business(owner_id)
+        # Check if user has active business
+        business = business_repo.get_active_business(owner_id)
         if not business:
-            return False, "У вас нет бизнеса", None
+            return False, "У вас нет активного бизнеса", None
         
         # Check if task belongs to this business
         task = business_repo.get_task(task_id)
@@ -696,7 +752,7 @@ class UserManager:
             return False, "Задача не найдена", None
         
         if task['business_id'] != business['id']:
-            return False, "Эта задача не принадлежит вашему бизнесу", None
+            return False, "Эта задача не принадлежит вашему активному бизнесу", None
         
         if task['status'] != 'submitted':
             return False, "Задача не отправлена на проверку", None
@@ -729,10 +785,10 @@ class UserManager:
         Returns:
             Tuple of (success, message)
         """
-        # Check if user is business owner
-        business = business_repo.get_business(owner_id)
+        # Check if user has active business
+        business = business_repo.get_active_business(owner_id)
         if not business:
-            return False, "У вас нет бизнеса"
+            return False, "У вас нет активного бизнеса"
         
         # Check if task belongs to this business
         task = business_repo.get_task(task_id)
@@ -740,7 +796,7 @@ class UserManager:
             return False, "Задача не найдена"
         
         if task['business_id'] != business['id']:
-            return False, "Эта задача не принадлежит вашему бизнесу"
+            return False, "Эта задача не принадлежит вашему активному бизнесу"
         
         if task['status'] != 'submitted':
             return False, "Задача не отправлена на проверку"
@@ -772,10 +828,10 @@ class UserManager:
         if new_deadline_minutes <= 0:
             return False, "Дедлайн должен быть положительным числом"
         
-        # Check if user is business owner
-        business = business_repo.get_business(owner_id)
+        # Check if user has active business
+        business = business_repo.get_active_business(owner_id)
         if not business:
-            return False, "У вас нет бизнеса"
+            return False, "У вас нет активного бизнеса"
         
         # Check if task belongs to this business
         task = business_repo.get_task(task_id)
@@ -783,7 +839,7 @@ class UserManager:
             return False, "Задача не найдена"
         
         if task['business_id'] != business['id']:
-            return False, "Эта задача не принадлежит вашему бизнесу"
+            return False, "Эта задача не принадлежит вашему активному бизнесу"
         
         if task['status'] != 'submitted':
             return False, "Задача не отправлена на проверку"
@@ -803,8 +859,8 @@ class UserManager:
             return False, "Не удалось отправить задачу на доработку"
     
     def get_employee_rating(self, owner_id: int, employee_user_id: int) -> Optional[int]:
-        """Get employee rating in owner's business"""
-        business = business_repo.get_business(owner_id)
+        """Get employee rating in owner's active business"""
+        business = business_repo.get_active_business(owner_id)
         if not business:
             return None
         return business_repo.get_employee_rating(business['id'], employee_user_id)

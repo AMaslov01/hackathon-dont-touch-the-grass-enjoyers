@@ -1,6 +1,7 @@
 """
 Telegram bot with AI integration, user accounts, and token system
 """
+from ast import parse
 import os
 import logging
 import re
@@ -92,6 +93,15 @@ FIRE_EMPLOYEE_USERNAME = range(25, 26)
 
 # Swipe employees states
 SWIPE_EMPLOYEES_VIEWING = range(26, 27)
+
+# Create business conversation states (similar to finance)
+CREATE_BUSINESS_Q1, CREATE_BUSINESS_Q2, CREATE_BUSINESS_Q3, CREATE_BUSINESS_Q4 = range(27, 31)
+
+# Switch businesses conversation states
+SWITCH_BUSINESS_ID = range(31, 32)
+
+# Delete business conversation states
+DELETE_BUSINESS_ID, DELETE_BUSINESS_CONFIRM = range(32, 34)
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -408,7 +418,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 # Finance command handlers
 async def finance_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Start the finance conversation"""
+    """Start the finance conversation - updates active business or prompts to create one"""
     user_id = update.effective_user.id
 
     # Check if user has filled their info
@@ -424,26 +434,27 @@ async def finance_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             last_name=update.effective_user.last_name
         )
 
-        # Check if user already has business info
-        has_info = user_manager.has_business_info(user_id)
+        # Check if user has active business
+        active_business = user_manager.get_active_business(user_id)
 
-        if has_info:
+        if not active_business:
             await update.message.reply_text(
-                MESSAGES['finance_has_info'],
+                "❌ У вас нет активного бизнеса.\n\n"
+                "Создайте бизнес с помощью /create_business",
                 parse_mode='Markdown'
             )
-            return CHECKING_EXISTING
-        else:
-            # Start the questionnaire
-            await update.message.reply_text(
-                MESSAGES['finance_welcome'],
-                parse_mode='Markdown'
-            )
-            await update.message.reply_text(
-                MESSAGES['finance_question_1'],
-                parse_mode='Markdown'
-            )
-            return QUESTION_1
+            return ConversationHandler.END
+
+        # User has active business, offer to update it or generate plan
+        business_name = escape_markdown(active_business['business_name'])
+        await update.message.reply_text(
+            f"📊 Вы работаете с бизнесом: *{business_name}*\n\n"
+            f"Хотите обновить информацию о бизнесе или сгенерировать финансовый план?\n\n"
+            f"Ответьте *'да'* для обновления информации\n"
+            f"Ответьте *'нет'* для генерации плана с текущими данными",
+            parse_mode='Markdown'
+        )
+        return CHECKING_EXISTING
 
     except Exception as e:
         logger.error(f"Error in finance_start for user {user_id}: {e}")
@@ -800,6 +811,400 @@ async def finance_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     return ConversationHandler.END
 
 
+# Create business command handlers (new business creation flow)
+async def create_business_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Start the create business conversation"""
+    user_id = update.effective_user.id
+
+    # Check if user has filled their info
+    if not await check_user_info_filled(update, context):
+        return ConversationHandler.END
+
+    try:
+        # Ensure user exists in database
+        user_manager.get_or_create_user(
+            user_id=user_id,
+            username=update.effective_user.username,
+            first_name=update.effective_user.first_name,
+            last_name=update.effective_user.last_name
+        )
+
+        # Start the questionnaire
+        await update.message.reply_text(
+            "🏢 *Создание нового бизнеса*\n\n"
+            "Я помогу вам создать новый бизнес. "
+            "Пожалуйста, ответьте на несколько вопросов.\n\n"
+            "Вы можете отменить процесс в любой момент командой /cancel",
+            parse_mode='Markdown'
+        )
+        await update.message.reply_text(
+            MESSAGES['finance_question_1'],
+            parse_mode='Markdown'
+        )
+        return CREATE_BUSINESS_Q1
+
+    except Exception as e:
+        logger.error(f"Error in create_business_start for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+        return ConversationHandler.END
+
+
+async def create_business_q1(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle answer to question 1 (business name)"""
+    context.user_data['business_name'] = update.message.text
+    await update.message.reply_text(
+        MESSAGES['finance_question_2'],
+        parse_mode='Markdown'
+    )
+    return CREATE_BUSINESS_Q2
+
+
+async def create_business_q2(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle answer to question 2 (business type)"""
+    context.user_data['business_type'] = update.message.text
+    await update.message.reply_text(
+        MESSAGES['finance_question_3'],
+        parse_mode='Markdown'
+    )
+    return CREATE_BUSINESS_Q3
+
+
+async def create_business_q3(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle answer to question 3 (financial situation)"""
+    context.user_data['financial_situation'] = update.message.text
+    await update.message.reply_text(
+        MESSAGES['finance_question_4'],
+        parse_mode='Markdown'
+    )
+    return CREATE_BUSINESS_Q4
+
+
+async def create_business_q4(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle answer to question 4 (goals) and create business"""
+    user_id = update.effective_user.id
+    context.user_data['goals'] = update.message.text
+
+    logger.info(f"User {user_id} completed create_business questions")
+
+    # Validate business legality before saving
+    try:
+        validation_msg = await update.message.reply_text(
+            "🔍 Проверяем информацию о бизнесе на соответствие законодательству РФ..."
+        )
+
+        business_info = {
+            'business_name': context.user_data['business_name'],
+            'business_type': context.user_data['business_type'],
+            'financial_situation': context.user_data['financial_situation'],
+            'goals': context.user_data['goals']
+        }
+
+        validation_result = ai_client.validate_business_legality(business_info)
+
+        try:
+            await validation_msg.delete()
+        except:
+            pass
+
+        if not validation_result['is_valid']:
+            logger.warning(f"Business validation failed for user {user_id}")
+            await update.message.reply_text(
+                f"❌ {validation_result['message']}",
+                parse_mode='Markdown'
+            )
+            context.user_data.clear()
+            return ConversationHandler.END
+
+        logger.info(f"Business validation passed for user {user_id}")
+
+    except Exception as e:
+        logger.error(f"Error validating business legality for user {user_id}: {e}")
+        try:
+            await validation_msg.delete()
+        except:
+            pass
+        await update.message.reply_text(
+            "❌ Произошла ошибка при проверке информации о бизнесе. "
+            "Пожалуйста, попробуйте позже.",
+            parse_mode='Markdown'
+        )
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    # Save business info to database
+    try:
+        success = user_manager.save_business_info(
+            user_id=user_id,
+            business_name=context.user_data['business_name'],
+            business_type=context.user_data['business_type'],
+            financial_situation=context.user_data['financial_situation'],
+            goals=context.user_data['goals']
+        )
+
+        if not success:
+            await update.message.reply_text(MESSAGES['database_error'])
+            context.user_data.clear()
+            return ConversationHandler.END
+
+        business_name = escape_markdown(context.user_data['business_name'])
+        await update.message.reply_text(
+            f"✅ *Бизнес '{business_name}' успешно создан!*\n\n"
+            f"Этот бизнес автоматически установлен как активный.\n"
+            f"Используйте /switch_businesses для смены активного бизнеса.\n"
+            f"Используйте /delete_business для удаления бизнеса.",
+            parse_mode='HTML'
+        )
+
+    except Exception as e:
+        logger.error(f"Error saving business info for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+    finally:
+        context.user_data.clear()
+
+    return ConversationHandler.END
+
+
+async def create_business_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle cancellation of create business conversation"""
+    await update.message.reply_text("❌ Создание бизнеса отменено")
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
+# Switch businesses command handlers
+async def switch_businesses_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Start switch businesses conversation"""
+    user_id = update.effective_user.id
+
+    try:
+        # Ensure user exists
+        user_manager.get_or_create_user(
+            user_id=user_id,
+            username=update.effective_user.username,
+            first_name=update.effective_user.first_name,
+            last_name=update.effective_user.last_name
+        )
+
+        # Get all user businesses
+        businesses = user_manager.get_all_user_businesses(user_id)
+
+        if not businesses:
+            await update.message.reply_text(
+                "❌ У вас нет бизнесов.\n\n"
+                "Создайте бизнес с помощью /create_business",
+                parse_mode='HTML'
+            )
+            return ConversationHandler.END
+
+        if len(businesses) == 1:
+            await update.message.reply_text(
+                "ℹ️ У вас только один бизнес.\n\n"
+                "Создайте ещё один с помощью /create_business",
+                parse_mode='HTML'
+            )
+            return ConversationHandler.END
+
+        # Show list of businesses
+        businesses_text = "🏢 *Ваши бизнесы:*\n\n"
+        for biz in businesses:
+            is_active = " ✅ *активный*" if biz['is_active'] else ""
+            name = escape_markdown(biz['business_name'])
+            businesses_text += f"*ID {biz['id']}:* {name}{is_active}\n"
+
+        businesses_text += "\n💡 Пожалуйста, укажите ID бизнеса, который хотите сделать активным:"
+
+        await update.message.reply_text(businesses_text, parse_mode='Markdown')
+        return SWITCH_BUSINESS_ID
+
+    except Exception as e:
+        logger.error(f"Error in switch_businesses_start for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+        return ConversationHandler.END
+
+
+async def switch_businesses_id_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle business ID input for switching"""
+    user_id = update.effective_user.id
+
+    try:
+        business_id = int(update.message.text.strip())
+
+        # Set active business
+        success, message = user_manager.set_active_business(user_id, business_id)
+
+        if success:
+            # Get the business name to show
+            businesses = user_manager.get_all_user_businesses(user_id)
+            business = next((b for b in businesses if b['id'] == business_id), None)
+            business_name = escape_markdown(business['business_name']) if business else "бизнес"
+
+            await update.message.reply_text(
+                f"✅ Активный бизнес изменен на '{business_name}'!",
+                parse_mode='Markdown'
+            )
+        else:
+            await update.message.reply_text(f"❌ {message}", parse_mode='Markdown')
+
+        logger.info(f"User {user_id} tried to switch to business {business_id}: {success}")
+
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Неверный формат ID. Пожалуйста, введите число.",
+            parse_mode='Markdown'
+        )
+        return SWITCH_BUSINESS_ID
+    except Exception as e:
+        logger.error(f"Error in switch_businesses_id_handler for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+
+    return ConversationHandler.END
+
+
+async def switch_businesses_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancel switch businesses conversation"""
+    await update.message.reply_text("❌ Смена активного бизнеса отменена")
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
+# Delete business command handlers
+async def delete_business_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Start delete business conversation"""
+    user_id = update.effective_user.id
+
+    try:
+        # Ensure user exists
+        user_manager.get_or_create_user(
+            user_id=user_id,
+            username=update.effective_user.username,
+            first_name=update.effective_user.first_name,
+            last_name=update.effective_user.last_name
+        )
+
+        # Get all user businesses
+        businesses = user_manager.get_all_user_businesses(user_id)
+
+        if not businesses:
+            await update.message.reply_text(
+                "❌ У вас нет бизнесов для удаления.",
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
+
+        # Show list of businesses
+        businesses_text = "🗑 *Удаление бизнеса*\n\n"
+        businesses_text += "⚠️ *ВНИМАНИЕ:* Удаление бизнеса приведет к удалению:\n"
+        businesses_text += "• Всех сотрудников\n"
+        businesses_text += "• Всех задач\n"
+        businesses_text += "• Всех связанных данных\n\n"
+        businesses_text += "*Ваши бизнесы:*\n\n"
+
+        for biz in businesses:
+            is_active = " ✅ *активный*" if biz['is_active'] else ""
+            name = escape_markdown(biz['business_name'])
+            businesses_text += f"*ID {biz['id']}:* {name}{is_active}\n"
+
+        businesses_text += "\n💡 Пожалуйста, укажите ID бизнеса, который хотите удалить:"
+
+        await update.message.reply_text(businesses_text, parse_mode='Markdown')
+        return DELETE_BUSINESS_ID
+
+    except Exception as e:
+        logger.error(f"Error in delete_business_start for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+        return ConversationHandler.END
+
+
+async def delete_business_id_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle business ID input for deletion"""
+    user_id = update.effective_user.id
+
+    try:
+        business_id = int(update.message.text.strip())
+        context.user_data['delete_business_id'] = business_id
+
+        # Get business name for confirmation
+        businesses = user_manager.get_all_user_businesses(user_id)
+        business = next((b for b in businesses if b['id'] == business_id), None)
+
+        if not business:
+            await update.message.reply_text(
+                "❌ Бизнес с таким ID не найден или не принадлежит вам.",
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
+
+        business_name = escape_markdown(business['business_name'])
+        await update.message.reply_text(
+            f"⚠️ *ПОДТВЕРЖДЕНИЕ УДАЛЕНИЯ*\n\n"
+            f"Вы действительно хотите удалить бизнес '{business_name}'?\n\n"
+            f"Это действие *НЕОБРАТИМО* и приведет к удалению всех данных бизнеса.\n\n"
+            f"Введите *'да'* для подтверждения или *'нет'* для отмены:",
+            parse_mode='Markdown'
+        )
+        return DELETE_BUSINESS_CONFIRM
+
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Неверный формат ID. Пожалуйста, введите число.",
+            parse_mode='Markdown'
+        )
+        return DELETE_BUSINESS_ID
+    except Exception as e:
+        logger.error(f"Error in delete_business_id_handler for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+        return ConversationHandler.END
+
+
+async def delete_business_confirm_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle confirmation for business deletion"""
+    user_id = update.effective_user.id
+    user_response = update.message.text.lower().strip()
+
+    if user_response not in ['да', 'yes', 'y', '+']:
+        await update.message.reply_text(
+            "❌ Удаление бизнеса отменено.",
+            parse_mode='Markdown'
+        )
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    business_id = context.user_data.get('delete_business_id')
+
+    if not business_id:
+        await update.message.reply_text(MESSAGES['database_error'])
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    try:
+        # Delete business
+        success, message = user_manager.delete_business(user_id, business_id)
+
+        if success:
+            await update.message.reply_text(
+                f"✅ {message}",
+                parse_mode='Markdown'
+            )
+        else:
+            await update.message.reply_text(f"❌ {message}", parse_mode='Markdown')
+
+        logger.info(f"User {user_id} tried to delete business {business_id}: {success}")
+
+    except Exception as e:
+        logger.error(f"Error deleting business for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
+async def delete_business_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancel delete business conversation"""
+    await update.message.reply_text("❌ Удаление бизнеса отменено")
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
 # Clients search command handlers
 async def clients_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start the clients search conversation"""
@@ -813,6 +1218,15 @@ async def clients_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             first_name=update.effective_user.first_name,
             last_name=update.effective_user.last_name
         )
+
+        # Check if user has active business
+        if not user_manager.has_active_business(user_id):
+            await update.message.reply_text(
+                "❌ У вас нет активного бизнеса.\n\n"
+                "Создайте бизнес с помощью /create_business",
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
 
         # Check if user already has workers info
         has_info = user_manager.has_workers_info(user_id)
@@ -996,6 +1410,15 @@ async def executors_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             first_name=update.effective_user.first_name,
             last_name=update.effective_user.last_name
         )
+
+        # Check if user has active business
+        if not user_manager.has_active_business(user_id):
+            await update.message.reply_text(
+                "❌ У вас нет активного бизнеса.\n\n"
+                "Создайте бизнес с помощью /create_business",
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
 
         # Check if user already has executors info
         has_info = user_manager.has_executors_info(user_id)
@@ -1717,9 +2140,40 @@ async def reject_invitation_cancel(update: Update, context: ContextTypes.DEFAULT
     context.user_data.clear()
     return ConversationHandler.END
 
-
 async def my_businesses_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the /my_businesses command to view businesses where user is an employee"""
+    user_id = update.effective_user.id
+
+    try:
+        # Get businesses where user is an employee
+        businesses = user_manager.get_all_user_businesses(user_id)
+
+        if not businesses:
+            await update.message.reply_text(
+                MESSAGES['my_businesses_empty'],
+                parse_mode='Markdown'
+            )
+            return
+
+        # Format businesses list
+        businesses_text = ""
+        for biz in businesses:
+            escaped_business_name = escape_markdown(biz['business_name'])
+            businesses_text += f"• *{escaped_business_name}*\n\n"
+
+        await update.message.reply_text(
+            MESSAGES['my_businesses_list'].format(businesses=businesses_text),
+            parse_mode='Markdown'
+        )
+
+        logger.info(f"User {user_id} viewed their businesses")
+
+    except Exception as e:
+        logger.error(f"Error in my_businesses command for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+
+async def my_employers_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle the /my_employers command to view businesses where user is an employee"""
     user_id = update.effective_user.id
 
     try:
@@ -1728,7 +2182,7 @@ async def my_businesses_command(update: Update, context: ContextTypes.DEFAULT_TY
 
         if not businesses:
             await update.message.reply_text(
-                MESSAGES['my_businesses_empty'],
+                MESSAGES['my_employers_empty'],
                 parse_mode='Markdown'
             )
             return
@@ -1743,14 +2197,14 @@ async def my_businesses_command(update: Update, context: ContextTypes.DEFAULT_TY
             businesses_text += f"  Владелец: {escaped_owner_name}\n\n"
 
         await update.message.reply_text(
-            MESSAGES['my_businesses_list'].format(businesses=businesses_text),
+            MESSAGES['my_employers_list'].format(businesses=businesses_text),
             parse_mode='Markdown'
         )
 
-        logger.info(f"User {user_id} viewed their businesses")
+        logger.info(f"User {user_id} viewed their employers")
 
     except Exception as e:
-        logger.error(f"Error in my_businesses command for user {user_id}: {e}")
+        logger.error(f"Error in my_employers command for user {user_id}: {e}")
         await update.message.reply_text(MESSAGES['database_error'])
 
 
@@ -1760,10 +2214,11 @@ async def create_task_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_id = update.effective_user.id
 
     try:
-        # Check if user is business owner
-        if not user_manager.is_business_owner(user_id):
+        # Check if user has active business
+        if not user_manager.has_active_business(user_id):
             await update.message.reply_text(
-                MESSAGES['task_no_business'],
+                "❌ У вас нет активного бизнеса.\n\n"
+                "Создайте бизнес с помощью /create_business",
                 parse_mode='Markdown'
             )
             return ConversationHandler.END
@@ -2187,10 +2642,11 @@ async def assign_task_start(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     user_id = update.effective_user.id
 
     try:
-        # Check if user is business owner
-        if not user_manager.is_business_owner(user_id):
+        # Check if user has active business
+        if not user_manager.has_active_business(user_id):
             await update.message.reply_text(
-                MESSAGES['task_no_business'],
+                "❌ У вас нет активного бизнеса.\n\n"
+                "Создайте бизнес с помощью /create_business",
                 parse_mode='Markdown'
             )
             return ConversationHandler.END
@@ -2527,15 +2983,16 @@ async def all_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     user_id = update.effective_user.id
 
     try:
-        # Check if user is business owner
-        if not user_manager.is_business_owner(user_id):
+        # Check if user has active business
+        if not user_manager.has_active_business(user_id):
             await update.message.reply_text(
-                MESSAGES['task_no_business'],
+                "❌ У вас нет активного бизнеса.\n\n"
+                "Создайте бизнес с помощью /create_business",
                 parse_mode='Markdown'
             )
             return
 
-        # Get all business tasks
+        # Get all active business tasks
         tasks = user_manager.get_business_all_tasks(user_id)
 
         if not tasks:
@@ -2603,10 +3060,11 @@ async def submitted_tasks_command(update: Update, context: ContextTypes.DEFAULT_
     user_id = update.effective_user.id
 
     try:
-        # Check if user is business owner
-        if not user_manager.is_business_owner(user_id):
+        # Check if user has active business
+        if not user_manager.has_active_business(user_id):
             await update.message.reply_text(
-                MESSAGES['task_no_business'],
+                "❌ У вас нет активного бизнеса.\n\n"
+                "Создайте бизнес с помощью /create_business",
                 parse_mode='Markdown'
             )
             return
@@ -2658,10 +3116,11 @@ async def review_task_start(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     user_id = update.effective_user.id
 
     try:
-        # Check if user is business owner
-        if not user_manager.is_business_owner(user_id):
+        # Check if user has active business
+        if not user_manager.has_active_business(user_id):
             await update.message.reply_text(
-                MESSAGES['task_no_business'],
+                "❌ У вас нет активного бизнеса.\n\n"
+                "Создайте бизнес с помощью /create_business",
                 parse_mode='Markdown'
             )
             return ConversationHandler.END
@@ -3090,6 +3549,15 @@ async def find_similar_command(update: Update, context: ContextTypes.DEFAULT_TYP
             first_name=user.first_name,
             last_name=user.last_name
         )
+
+        # Check if user has active business
+        if not user_manager.has_active_business(user_id):
+            await update.message.reply_text(
+                "❌ У вас нет активного бизнеса.\n\n"
+                "Создайте бизнес с помощью /create_business",
+                parse_mode='Markdown'
+            )
+            return
 
         # Check if user has business_info
         if not user_manager.has_business_info(user_id):
@@ -3594,7 +4062,7 @@ async def check_overdue_tasks_job(context: ContextTypes.DEFAULT_TYPE) -> None:
 async def setup_bot_commands(application):
     """Set up bot commands for Telegram menu"""
     from telegram import BotCommand
-    
+   
     commands = [
         BotCommand("start", "Начать работу с ботом"),
         BotCommand("help", "Справка по командам"),
@@ -3612,7 +4080,7 @@ async def setup_bot_commands(application):
         BotCommand("invitations", "Посмотреть приглашения"),
         BotCommand("accept", "Принять приглашение"),
         BotCommand("reject", "Отклонить приглашение"),
-        BotCommand("my_businesses", "Мои работодатели"),
+        BotCommand("my_employers", "Мои работодатели"),
         BotCommand("create_task", "Создать задачу"),
         BotCommand("available_tasks", "Доступные задачи"),
         BotCommand("my_tasks", "Мои задачи"),
@@ -3623,6 +4091,10 @@ async def setup_bot_commands(application):
         BotCommand("abandon_task", "Отказаться от задачи"),
         BotCommand("submitted_tasks", "Задачи на проверке"),
         BotCommand("review_task", "Проверить задачу"),
+        BotCommand("create_business", "Зарегистрировать бизнеc"),
+        BotCommand("my_businesses", "Мои бизнесы"),
+        BotCommand("delete_business", "Удалить бизнес"),
+        BotCommand("switch_businesses", "Сменить активный бизнес"),
     ]
     
     await application.bot.set_my_commands(commands)
@@ -3658,37 +4130,7 @@ def main() -> None:
             .request(request)
             .build()
         )
-
-        # Register start command as conversation handler (for user info collection)
-        start_handler = ConversationHandler(
-            entry_points=[CommandHandler("start", start_command)],
-            states={
-                USER_INFO_INPUT: [
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, user_info_handler)
-                ],
-            },
-            fallbacks=[],
-            allow_reentry=True
-        )
-        application.add_handler(start_handler)
-
-        # Register other command handlers
-        application.add_handler(CommandHandler("balance", balance_command))
-        application.add_handler(CommandHandler("roulette", roulette_command))
-        application.add_handler(CommandHandler("help", help_command))
-        application.add_handler(CommandHandler("find_similar", find_similar_command))
-        application.add_handler(CommandHandler("export_history", export_history_command))
-
-        # Register callback query handler for inline buttons (only invitation buttons)
-        application.add_handler(CallbackQueryHandler(
-            invitation_callback_handler, 
-            pattern="^(accept_inv_|reject_inv_)"
-        ))
-
-        # Register employee management command handlers
-        application.add_handler(CommandHandler("employees", employees_command))
-        application.add_handler(CommandHandler("invitations", invitations_command))
-        application.add_handler(CommandHandler("my_businesses", my_businesses_command))
+    
 
         # Register employee management conversation handlers
         add_employee_handler = ConversationHandler(
@@ -3852,6 +4294,57 @@ def main() -> None:
         )
         application.add_handler(finance_handler)
 
+        # Register create business conversation handler
+        create_business_handler = ConversationHandler(
+            entry_points=[CommandHandler("create_business", create_business_start)],
+            states={
+                CREATE_BUSINESS_Q1: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, create_business_q1)
+                ],
+                CREATE_BUSINESS_Q2: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, create_business_q2)
+                ],
+                CREATE_BUSINESS_Q3: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, create_business_q3)
+                ],
+                CREATE_BUSINESS_Q4: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, create_business_q4)
+                ],
+            },
+            fallbacks=[
+                CommandHandler("cancel", create_business_cancel), MessageHandler(filters.COMMAND, create_business_cancel)
+                ],
+
+        )
+        application.add_handler(create_business_handler)
+
+        # Register switch businesses conversation handler
+        switch_businesses_handler = ConversationHandler(
+            entry_points=[CommandHandler("switch_businesses", switch_businesses_start)],
+            states={
+                SWITCH_BUSINESS_ID: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, switch_businesses_id_handler)
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", switch_businesses_cancel)],
+        )
+        application.add_handler(switch_businesses_handler)
+
+        # Register delete business conversation handler
+        delete_business_handler = ConversationHandler(
+            entry_points=[CommandHandler("delete_business", delete_business_start)],
+            states={
+                DELETE_BUSINESS_ID: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, delete_business_id_handler)
+                ],
+                DELETE_BUSINESS_CONFIRM: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, delete_business_confirm_handler)
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", delete_business_cancel)],
+        )
+        application.add_handler(delete_business_handler)
+
         # Register clients search conversation handler
         clients_handler = ConversationHandler(
             entry_points=[CommandHandler("clients", clients_start)],
@@ -3893,7 +4386,37 @@ def main() -> None:
             fallbacks=[CommandHandler("cancel", swipe_employees_cancel)],  # Track callback queries per message
         )
         application.add_handler(swipe_employees_handler)
+        # Register start command as conversation handler (for user info collection)
+        start_handler = ConversationHandler(
+            entry_points=[CommandHandler("start", start_command)],
+            states={
+                USER_INFO_INPUT: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, user_info_handler)
+                ],
+            },
+            fallbacks=[],
+            allow_reentry=True
+        )
+        application.add_handler(start_handler)
 
+        # Register other command handlers
+        application.add_handler(CommandHandler("balance", balance_command))
+        application.add_handler(CommandHandler("roulette", roulette_command))
+        application.add_handler(CommandHandler("help", help_command))
+        application.add_handler(CommandHandler("find_similar", find_similar_command))
+        application.add_handler(CommandHandler("export_history", export_history_command))
+
+        # Register callback query handler for inline buttons (only invitation buttons)
+        application.add_handler(CallbackQueryHandler(
+            invitation_callback_handler, 
+            pattern="^(accept_inv_|reject_inv_)"
+        ))
+
+        # Register employee management command handlers
+        application.add_handler(CommandHandler("employees", employees_command))
+        application.add_handler(CommandHandler("invitations", invitations_command))
+        application.add_handler(CommandHandler("my_employers", my_employers_command))
+        application.add_handler(CommandHandler("my_businesses", my_businesses_command))
         # Register message handler
         application.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
