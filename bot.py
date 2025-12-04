@@ -4093,7 +4093,7 @@ async def setup_bot_commands(application):
         BotCommand("review_task", "Проверить задачу"),
         BotCommand("create_business", "Зарегистрировать бизнеc"),
         BotCommand("my_businesses", "Мои бизнесы"),
-        BotCommand("delete_businesses", "Удалить бизнес"),
+        BotCommand("delete_business", "Удалить бизнес"),
         BotCommand("switch_businesses", "Сменить активный бизнес"),
     ]
     
