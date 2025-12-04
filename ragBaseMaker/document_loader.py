@@ -6,8 +6,8 @@ Provides simple interface for loading different document formats.
 from typing import List, Optional
 from pathlib import Path
 
-from langchain.schema import Document
-from langchain.document_loaders import (
+from langchain_core.documents import Document
+from langchain_community.document_loaders import (
     PyPDFLoader,
     UnstructuredWordDocumentLoader,
     UnstructuredExcelLoader,

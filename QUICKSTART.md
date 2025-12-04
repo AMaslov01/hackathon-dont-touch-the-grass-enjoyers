@@ -168,34 +168,46 @@ sudo journalctl -u telegram-bot -f
 
 #### Один файл
 ```bash
-# Загрузить один документ
-python3 rag_tools/add_documents.py document.pdf
-python3 rag_tools/add_documents.py report.docx
-python3 rag_tools/add_documents.py data.xlsx
+# Загрузить один документ из test_documents
+python3 rag_tools/add_documents.py test_documents/test_data.txt
+
+# Или загрузить свои документы
+python3 rag_tools/add_documents.py my_document.pdf
+python3 rag_tools/add_documents.py financial_report.docx
+python3 rag_tools/add_documents.py sales_data.xlsx
 ```
 
-#### Папка с документами
+#### Быстрый способ (рекомендуется)
 ```bash
-# Загрузить все документы из папки (только текущая папка)
-python3 rag_tools/add_documents.py /path/to/documents
+# Загрузить всю папку test_documents (автоматически рекурсивно)
+./load_documents.sh test_documents
 
-# Загрузить все документы включая подпапки (рекурсивно)
-python3 rag_tools/add_documents.py /path/to/documents --recursive
+# Загрузить один файл
+./load_documents.sh test_documents/test_data.txt
 
-# Пример: загрузить все из папки test_documents
+# С семантическим чанкингом (качественнее, медленнее)
+./load_documents.sh test_documents --semantic
+
+# Загрузить свою папку
+./load_documents.sh /path/to/your/documents
+
+# Загрузить свой файл
+./load_documents.sh /path/to/document.pdf
+```
+
+#### Напрямую через Python
+```bash
+# Загрузить тестовые документы (только текущая папка)
+python3 rag_tools/add_documents.py test_documents
+
+# Загрузить тестовые документы включая подпапки (рекурсивно)
 python3 rag_tools/add_documents.py test_documents --recursive
 
 # С семантическим чанкингом (качественнее, но медленнее)
-python3 rag_tools/add_documents.py /path/to/documents --semantic --recursive
-```
+python3 rag_tools/add_documents.py test_documents --semantic --recursive
 
-#### Используя скрипт
-```bash
-# Загрузить тестовые данные
-./load_documents.sh test_documents
-
-# Или свои документы
-./load_documents.sh /path/to/documents
+# Для своих документов используйте полный путь
+python3 rag_tools/add_documents.py /path/to/your/documents --recursive
 ```
 
 ### Поддерживаемые форматы

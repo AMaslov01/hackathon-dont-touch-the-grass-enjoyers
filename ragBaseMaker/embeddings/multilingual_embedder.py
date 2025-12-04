@@ -8,7 +8,7 @@ from typing import List, Union, Optional, Tuple
 import numpy as np
 
 try:
-    from langchain.embeddings.base import Embeddings
+    from langchain_core.embeddings import Embeddings
     LANGCHAIN_AVAILABLE = True
 except ImportError:
     # Fallback if LangChain not installed

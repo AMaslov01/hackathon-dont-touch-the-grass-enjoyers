@@ -12,9 +12,9 @@ from typing import List, Dict, Any, Optional, Literal
 from pathlib import Path
 from dataclasses import dataclass, field
 
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.schema import Document
-from langchain.vectorstores import Chroma
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_core.documents import Document
+from langchain_community.vectorstores import Chroma
 
 try:
     from langchain_experimental.text_splitter import SemanticChunker
