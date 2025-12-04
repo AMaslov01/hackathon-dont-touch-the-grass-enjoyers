@@ -796,7 +796,9 @@ class UserManager:
                 employee_name = f"@{employee_username}"
             else:
                 employee_name = task.get('assigned_to_name', f"ID {task['assigned_to']}")
-            return True, f"Задача отправлена на доработку сотруднику {employee_name}. Новый дедлайн: {new_deadline_minutes} мин."
+            # Convert minutes to hours for display
+            new_deadline_hours = new_deadline_minutes / 60
+            return True, f"Задача отправлена на доработку сотруднику {employee_name}. Новый дедлайн: {new_deadline_hours:.1f} ч."
         else:
             return False, "Не удалось отправить задачу на доработку"
     
