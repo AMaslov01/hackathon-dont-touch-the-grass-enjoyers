@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS users (
     username VARCHAR(255),
     first_name VARCHAR(255),
     last_name VARCHAR(255),
+    user_info TEXT,
+    overall_rating INTEGER,
     tokens INTEGER NOT NULL DEFAULT 0,
     max_tokens INTEGER NOT NULL DEFAULT 100,
     last_token_refresh TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -94,6 +96,8 @@ CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 -- Users table comments
 COMMENT ON TABLE users IS 'Stores user information and token balance';
 COMMENT ON COLUMN users.user_id IS 'Telegram user ID (primary key)';
+COMMENT ON COLUMN users.user_info IS 'User personal description for AI candidate matching';
+COMMENT ON COLUMN users.overall_rating IS 'Overall user rating from last job (null if never employed)';
 COMMENT ON COLUMN users.tokens IS 'Current available tokens';
 COMMENT ON COLUMN users.max_tokens IS 'Maximum tokens after refresh';
 COMMENT ON COLUMN users.last_token_refresh IS 'Last time tokens were refreshed';

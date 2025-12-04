@@ -101,6 +101,8 @@ class Database:
                         username VARCHAR(255),
                         first_name VARCHAR(255),
                         last_name VARCHAR(255),
+                        user_info TEXT,
+                        overall_rating INTEGER,
                         tokens INTEGER NOT NULL DEFAULT 0,
                         max_tokens INTEGER NOT NULL DEFAULT 100,
                         last_token_refresh TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -627,6 +629,99 @@ class UserRepository:
         finally:
             self.db.return_connection(conn)
 
+    def get_user_info(self, user_id: int) -> Optional[str]:
+        """Get user's personal description"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    "SELECT user_info FROM users WHERE user_id = %s",
+                    (user_id,)
+                )
+                result = cursor.fetchone()
+                return result['user_info'] if result else None
+        finally:
+            self.db.return_connection(conn)
+
+    def save_user_info(self, user_id: int, user_info: str) -> bool:
+        """Save or update user's personal description"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE users 
+                    SET user_info = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE user_id = %s
+                """, (user_info, user_id))
+                conn.commit()
+                logger.info(f"Saved user info for user {user_id}")
+                return True
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to save user info for user {user_id}: {e}")
+            return False
+        finally:
+            self.db.return_connection(conn)
+
+    def get_overall_rating(self, user_id: int) -> Optional[int]:
+        """Get user's overall rating"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    "SELECT overall_rating FROM users WHERE user_id = %s",
+                    (user_id,)
+                )
+                result = cursor.fetchone()
+                return result['overall_rating'] if result else None
+        finally:
+            self.db.return_connection(conn)
+
+    def update_overall_rating(self, user_id: int, rating: int) -> bool:
+        """Update user's overall rating (used when fired from last job)"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE users 
+                    SET overall_rating = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE user_id = %s
+                """, (rating, user_id))
+                conn.commit()
+                logger.info(f"Updated overall rating for user {user_id} to {rating}")
+                return True
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to update overall rating for user {user_id}: {e}")
+            return False
+        finally:
+            self.db.return_connection(conn)
+
+    def get_users_without_business_or_job(self, exclude_user_id: int = None) -> list:
+        """Get users who are not business owners and not currently employed"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                query = """
+                    SELECT u.user_id, u.username, u.first_name, u.user_info, u.overall_rating
+                    FROM users u
+                    WHERE u.user_info IS NOT NULL
+                    AND u.user_id NOT IN (SELECT owner_id FROM businesses)
+                    AND u.user_id NOT IN (SELECT user_id FROM employees WHERE status = 'accepted')
+                """
+                params = []
+                if exclude_user_id:
+                    query += " AND u.user_id != %s"
+                    params.append(exclude_user_id)
+                
+                query += " ORDER BY u.overall_rating DESC NULLS LAST"
+                
+                cursor.execute(query, params)
+                results = cursor.fetchall()
+                return [dict(row) for row in results]
+        finally:
+            self.db.return_connection(conn)
+
     def spin_roulette(self, user_id: int, amount: int) -> bool:
         """Give user roulette tokens and update last spin time"""
         conn = self.db.get_connection()
@@ -1049,11 +1144,28 @@ class BusinessRepository:
             self.db.return_connection(conn)
 
     def remove_employee(self, business_id: int, user_id: int) -> bool:
-        """Remove an employee from a business and free their tasks"""
+        """Remove an employee from a business, save their rating to overall_rating, and free their tasks"""
         conn = self.db.get_connection()
         try:
-            with conn.cursor() as cursor:
-                # First, free all tasks assigned to this employee
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                # First, get employee's current rating and save it to overall_rating
+                cursor.execute("""
+                    SELECT rating FROM employees 
+                    WHERE business_id = %s AND user_id = %s
+                """, (business_id, user_id))
+                employee = cursor.fetchone()
+                
+                if employee:
+                    current_rating = employee['rating']
+                    # Update user's overall_rating
+                    cursor.execute("""
+                        UPDATE users 
+                        SET overall_rating = %s, updated_at = CURRENT_TIMESTAMP
+                        WHERE user_id = %s
+                    """, (current_rating, user_id))
+                    logger.info(f"Saved overall_rating {current_rating} for user {user_id}")
+                
+                # Free all tasks assigned to this employee
                 cursor.execute("""
                     UPDATE tasks 
                     SET status = 'available',
@@ -1065,7 +1177,7 @@ class BusinessRepository:
                     RETURNING id
                 """, (business_id, user_id))
                 freed_tasks = cursor.fetchall()
-                freed_task_ids = [row[0] for row in freed_tasks] if freed_tasks else []
+                freed_task_ids = [row['id'] for row in freed_tasks] if freed_tasks else []
                 
                 # Then delete the employee
                 cursor.execute("""

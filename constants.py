@@ -584,7 +584,8 @@ COMMANDS_COSTS = {
     "finance_generate_plan" : 3,
     "clients_search" : 4,
     "executors_search" : 4,
-    "find_similar_command" : 4
+    "find_similar_command" : 4,
+    "swipe_employees" : 0  # Free feature for business owners
 }
 
 # Token system configuration
