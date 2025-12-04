@@ -139,8 +139,7 @@ class Database:
                         financial_situation TEXT,
                         goals TEXT,
                         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                        UNIQUE(owner_id)
+                        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
 
@@ -362,6 +361,58 @@ class Database:
                             RAISE NOTICE 'Added quality_coefficient column to tasks table';
                         END IF;
                     END $$;
+                """)
+                
+                # Migration 5: Add active_business_id to users table and remove UNIQUE constraint from businesses
+                cursor.execute("""
+                    DO $$
+                    BEGIN
+                        -- Add active_business_id column to users table
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns 
+                            WHERE table_name='users' AND column_name='active_business_id'
+                        ) THEN
+                            ALTER TABLE users ADD COLUMN active_business_id INTEGER;
+                            RAISE NOTICE 'Added active_business_id column to users table';
+                        END IF;
+                        
+                        -- Remove UNIQUE constraint on businesses.owner_id if it exists
+                        IF EXISTS (
+                            SELECT 1 FROM information_schema.table_constraints 
+                            WHERE constraint_name = 'businesses_owner_id_key' 
+                            AND table_name = 'businesses'
+                        ) THEN
+                            ALTER TABLE businesses DROP CONSTRAINT businesses_owner_id_key;
+                            RAISE NOTICE 'Removed UNIQUE constraint from businesses.owner_id';
+                        END IF;
+                        
+                        -- Set active_business_id for existing users with businesses
+                        UPDATE users 
+                        SET active_business_id = b.id
+                        FROM businesses b
+                        WHERE users.user_id = b.owner_id
+                        AND users.active_business_id IS NULL;
+                        
+                        -- Add foreign key constraint if it doesn't exist
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.table_constraints 
+                            WHERE constraint_name = 'fk_active_business' 
+                            AND table_name = 'users'
+                        ) THEN
+                            ALTER TABLE users 
+                            ADD CONSTRAINT fk_active_business 
+                            FOREIGN KEY (active_business_id) 
+                            REFERENCES businesses(id) 
+                            ON DELETE SET NULL;
+                            RAISE NOTICE 'Added foreign key constraint for active_business_id';
+                        END IF;
+                    END $$;
+                """)
+                
+                # Add index for active_business_id
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_users_active_business 
+                    ON users(active_business_id)
                 """)
                 
                 conn.commit()
@@ -870,16 +921,40 @@ class BusinessRepository:
         self.db = db
 
     def get_business(self, owner_id: int) -> Optional[dict]:
-        """Get business by owner ID"""
+        """Get active business by owner ID (for backwards compatibility)"""
+        return self.get_active_business(owner_id)
+    
+    def get_active_business(self, owner_id: int) -> Optional[dict]:
+        """Get active business for user"""
         conn = self.db.get_connection()
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute(
-                    "SELECT * FROM businesses WHERE owner_id = %s",
-                    (owner_id,)
-                )
+                cursor.execute("""
+                    SELECT b.* 
+                    FROM businesses b
+                    JOIN users u ON u.active_business_id = b.id
+                    WHERE u.user_id = %s
+                """, (owner_id,))
                 result = cursor.fetchone()
                 return dict(result) if result else None
+        finally:
+            self.db.return_connection(conn)
+    
+    def get_all_user_businesses(self, owner_id: int) -> list:
+        """Get all businesses owned by user"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute("""
+                    SELECT b.*, 
+                           (b.id = u.active_business_id) as is_active
+                    FROM businesses b
+                    LEFT JOIN users u ON u.user_id = b.owner_id
+                    WHERE b.owner_id = %s
+                    ORDER BY b.created_at DESC
+                """, (owner_id,))
+                results = cursor.fetchall()
+                return [dict(row) for row in results] if results else []
         finally:
             self.db.return_connection(conn)
 
@@ -900,19 +975,30 @@ class BusinessRepository:
     def create_business(self, owner_id: int, business_name: str,
                        business_type: str = None, financial_situation: str = None,
                        goals: str = None) -> dict:
-        """Create a new business"""
+        """Create a new business and set it as active"""
         conn = self.db.get_connection()
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                # Insert new business
                 cursor.execute("""
                     INSERT INTO businesses (owner_id, business_name, business_type, 
                                           financial_situation, goals)
                     VALUES (%s, %s, %s, %s, %s)
                     RETURNING *
                 """, (owner_id, business_name, business_type, financial_situation, goals))
-                conn.commit()
                 result = cursor.fetchone()
-                logger.info(f"Created new business for owner {owner_id}: {business_name}")
+                business_id = result['id']
+                
+                # Set as active business
+                cursor.execute("""
+                    UPDATE users 
+                    SET active_business_id = %s, 
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE user_id = %s
+                """, (business_id, owner_id))
+                
+                conn.commit()
+                logger.info(f"Created new business for owner {owner_id}: {business_name} (ID: {business_id})")
                 return dict(result)
         except Exception as e:
             conn.rollback()
@@ -921,10 +1007,10 @@ class BusinessRepository:
         finally:
             self.db.return_connection(conn)
 
-    def update_business(self, owner_id: int, business_name: str = None,
+    def update_business(self, business_id: int, business_name: str = None,
                        business_type: str = None, financial_situation: str = None,
                        goals: str = None) -> bool:
-        """Update business information"""
+        """Update business information by business_id"""
         conn = self.db.get_connection()
         try:
             with conn.cursor() as cursor:
@@ -935,14 +1021,14 @@ class BusinessRepository:
                         financial_situation = COALESCE(%s, financial_situation),
                         goals = COALESCE(%s, goals),
                         updated_at = CURRENT_TIMESTAMP
-                    WHERE owner_id = %s
-                """, (business_name, business_type, financial_situation, goals, owner_id))
+                    WHERE id = %s
+                """, (business_name, business_type, financial_situation, goals, business_id))
                 conn.commit()
-                logger.info(f"Updated business for owner {owner_id}")
+                logger.info(f"Updated business {business_id}")
                 return True
         except Exception as e:
             conn.rollback()
-            logger.error(f"Failed to update business for owner {owner_id}: {e}")
+            logger.error(f"Failed to update business {business_id}: {e}")
             return False
         finally:
             self.db.return_connection(conn)
@@ -950,15 +1036,108 @@ class BusinessRepository:
     def save_or_update_business(self, owner_id: int, business_name: str,
                                business_type: str = None, financial_situation: str = None,
                                goals: str = None) -> dict:
-        """Create or update business"""
-        existing = self.get_business(owner_id)
+        """Create or update active business"""
+        existing = self.get_active_business(owner_id)
         if existing:
-            self.update_business(owner_id, business_name, business_type,
+            self.update_business(existing['id'], business_name, business_type,
                                financial_situation, goals)
-            return self.get_business(owner_id)
+            return self.get_active_business(owner_id)
         else:
             return self.create_business(owner_id, business_name, business_type,
                                        financial_situation, goals)
+    
+    def set_active_business(self, owner_id: int, business_id: int) -> bool:
+        """Set active business for user"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor() as cursor:
+                # Verify that business belongs to user
+                cursor.execute("""
+                    SELECT id FROM businesses 
+                    WHERE id = %s AND owner_id = %s
+                """, (business_id, owner_id))
+                
+                if not cursor.fetchone():
+                    logger.warning(f"Business {business_id} not found or doesn't belong to user {owner_id}")
+                    return False
+                
+                # Set as active
+                cursor.execute("""
+                    UPDATE users 
+                    SET active_business_id = %s,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE user_id = %s
+                """, (business_id, owner_id))
+                conn.commit()
+                logger.info(f"Set business {business_id} as active for user {owner_id}")
+                return True
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to set active business: {e}")
+            return False
+        finally:
+            self.db.return_connection(conn)
+    
+    def delete_business(self, owner_id: int, business_id: int) -> bool:
+        """
+        Delete business with cascade deletion of all related data
+        (employees, tasks, etc. are handled by ON DELETE CASCADE)
+        If this is the active business, set another business as active or set to NULL
+        """
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                # Verify that business belongs to user
+                cursor.execute("""
+                    SELECT id FROM businesses 
+                    WHERE id = %s AND owner_id = %s
+                """, (business_id, owner_id))
+                
+                if not cursor.fetchone():
+                    logger.warning(f"Business {business_id} not found or doesn't belong to user {owner_id}")
+                    return False
+                
+                # Check if this is the active business
+                cursor.execute("""
+                    SELECT active_business_id FROM users 
+                    WHERE user_id = %s
+                """, (owner_id,))
+                user = cursor.fetchone()
+                is_active = user and user['active_business_id'] == business_id
+                
+                # Delete the business (CASCADE will handle related records)
+                cursor.execute("""
+                    DELETE FROM businesses 
+                    WHERE id = %s AND owner_id = %s
+                """, (business_id, owner_id))
+                
+                # If deleted business was active, set another business as active
+                if is_active:
+                    cursor.execute("""
+                        SELECT id FROM businesses 
+                        WHERE owner_id = %s 
+                        ORDER BY created_at DESC 
+                        LIMIT 1
+                    """, (owner_id,))
+                    next_business = cursor.fetchone()
+                    
+                    new_active_id = next_business['id'] if next_business else None
+                    cursor.execute("""
+                        UPDATE users 
+                        SET active_business_id = %s,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE user_id = %s
+                    """, (new_active_id, owner_id))
+                
+                conn.commit()
+                logger.info(f"Deleted business {business_id} for user {owner_id}")
+                return True
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to delete business: {e}")
+            return False
+        finally:
+            self.db.return_connection(conn)
 
     def get_user_by_username(self, username: str) -> Optional[int]:
         """Get user_id by username"""
@@ -1098,8 +1277,13 @@ class BusinessRepository:
             self.db.return_connection(conn)
 
     def is_business_owner(self, user_id: int) -> bool:
-        """Check if user is a business owner"""
-        business = self.get_business(user_id)
+        """Check if user is a business owner (has at least one business)"""
+        businesses = self.get_all_user_businesses(user_id)
+        return len(businesses) > 0
+    
+    def has_active_business(self, user_id: int) -> bool:
+        """Check if user has an active business"""
+        business = self.get_active_business(user_id)
         return business is not None
 
     def is_employee(self, user_id: int, business_id: int = None) -> bool:
