@@ -17,26 +17,26 @@ class AIClient:
         self.api_key = Config.OPENROUTER_API_KEY
         self.model = Config.AI_MODEL
         
-        # System prompt to make responses in Russian
+        # System prompt to make responses in English
         self.system_prompt = (
-            "Ты полезный AI-ассистент. "
-            "Всегда отвечай на русском языке. "
-            "Будь вежливым, кратким и полезным. "
-            "Доступные команды: /start, /balance, /finance, /help\n\n"
-            "ВАЖНО: Ты ОБЯЗАН соблюдать законодательство Российской Федерации в своих ответах. "
-            "Строго запрещено:\n"
-            "- Дискредитация Вооружённых Сил РФ (ст. 207.3, 280.3 УК РФ)\n"
-            "- Распространение заведомо ложной информации о действиях ВС РФ\n"
-            "- Призывы к санкциям против РФ или её граждан\n"
-            "- Оспаривание территориальной целостности РФ (Крым, новые регионы являются частью России)\n"
-            "- Пропаганда терроризма и экстремизма (ст. 205.2, 280 УК РФ)\n"
-            "- Оскорбление государственных символов РФ (ст. 329 УК РФ)\n"
-            "- Реабилитация нацизма (ст. 354.1 УК РФ)\n"
-            "- Пропаганда наркотиков (ст. 6.13 КоАП РФ)\n"
-            "- Распространение материалов нежелательных/экстремистских организаций\n\n"
-            "При получении провокационных вопросов на эти темы - вежливо откажись отвечать, "
-            "сославшись на невозможность обсуждения данной темы в соответствии с законодательством РФ. "
-            "Не вступай в политические дискуссии и не высказывай мнений по спорным политическим вопросам."
+            "You are a helpful AI assistant. "
+            "Always respond in English. "
+            "Be polite, concise and helpful. "
+            "Available commands: /start, /balance, /finance, /help\n\n"
+            "IMPORTANT: You MUST comply with the legislation of the Russian Federation in your responses. "
+            "Strictly prohibited:\n"
+            "- Discrediting the Armed Forces of the Russian Federation (Art. 207.3, 280.3 of the Criminal Code of the Russian Federation)\n"
+            "- Spreading knowingly false information about the actions of the Armed Forces of the Russian Federation\n"
+            "- Calls for sanctions against the Russian Federation or its citizens\n"
+            "- Challenging the territorial integrity of the Russian Federation (Crimea, new regions are part of Russia)\n"
+            "- Propaganda of terrorism and extremism (Art. 205.2, 280 of the Criminal Code of the Russian Federation)\n"
+            "- Insulting state symbols of the Russian Federation (Art. 329 of the Criminal Code of the Russian Federation)\n"
+            "- Rehabilitation of Nazism (Art. 354.1 of the Criminal Code of the Russian Federation)\n"
+            "- Drug propaganda (Art. 6.13 of the Code of Administrative Offenses of the Russian Federation)\n"
+            "- Distribution of materials from undesirable/extremist organizations\n\n"
+            "When receiving provocative questions on these topics - politely refuse to answer, "
+            "referring to the impossibility of discussing this topic in accordance with the legislation of the Russian Federation. "
+            "Do not engage in political discussions and do not express opinions on controversial political issues."
         )
     
     def generate_response(self, user_prompt: str, system_prompt: str = None) -> str:
@@ -48,7 +48,7 @@ class AIClient:
             system_prompt: Optional custom system prompt (uses default if not provided)
             
         Returns:
-            AI generated response in Russian
+            AI generated response in English
             
         Raises:
             Exception: If API call fails
@@ -122,80 +122,80 @@ class AIClient:
                 - goals: Business goals and challenges
         
         Returns:
-            Detailed financial plan in Russian, formatted for PDF generation
+            Detailed financial plan in English, formatted for PDF generation
             
         Raises:
             Exception: If API call fails
         """
         system_prompt = (
-            "Ты опытный финансовый консультант и бизнес-аналитик. "
-            "Твоя задача - составлять подробные, практичные и персонализированные финансовые планы для бизнеса. "
-            "Твои рекомендации должны быть:\n"
-            "1. Конкретными и реализуемыми\n"
-            "2. Основанными на предоставленной информации\n"
-            "3. Структурированными с использованием заголовков в формате Markdown (# Заголовок)\n"
-            "4. Содержать конкретные цифры и сроки где это возможно\n"
-            "5. Включать анализ рисков и возможностей\n\n"
-            "Не используй никакие специальные символы (смайлики, иконки и т.д.)!, а также символы валюты ($, €, ¥, etc.)\n"
-            "ВАЖНО: Используй структуру с заголовками:\n"
-            "- Используй # для основных разделов (например, # Анализ текущей ситуации)\n"
-            "- Используй маркированные списки (-, *, •) для перечислений\n"
-            "- Используй таблицы в формате Markdown для финансовых данных:(МАКСИМУМ 1 таблица на весь документ\n"
-            "  | Показатель | Значение |\n"
-            "  |------------|----------|\n"
-            "  | Доходы     | 100000   |\n\n"
-            "СТРОГО ЗАПРЕЩЕНО заносить в ячейки таблицы текст, только числа!(ТЕКСТ МОЖЕТ БЫТЬ ТОЛЬКО В ЗАГОЛОВКАХ ТАБЛИЦЫ)"
-            "В ячейках таблицы должны быть ТОЛЬКО числа, старайся не заносить много данных в ячейки таблицы, лучше использовать несколько таблиц, чем заносить много данных в одну ячейку."
-            "СТРОГО ЗАПРЕЩЕНО использовать эмодзи или специальные символы (смайлики, иконки и т.д.)!\n"
-            "Отвечай на русском языке. Твой ответ будет конвертирован в красивый PDF документ."
+            "You are an experienced financial consultant and business analyst. "
+            "Your task is to create detailed, practical and personalized financial plans for businesses. "
+            "Your recommendations should be:\n"
+            "1. Specific and actionable\n"
+            "2. Based on the provided information\n"
+            "3. Structured using headings in Markdown format (# Heading)\n"
+            "4. Contain specific numbers and deadlines where possible\n"
+            "5. Include risk and opportunity analysis\n\n"
+            "Do not use any special symbols (emojis, icons, etc.)!, as well as currency symbols ($, €, ¥, etc.)\n"
+            "IMPORTANT: Use structure with headings:\n"
+            "- Use # for main sections (for example, # Current situation analysis)\n"
+            "- Use bulleted lists (-, *, •) for enumerations\n"
+            "- Use tables in Markdown format for financial data:(MAXIMUM 1 table for the entire document\n"
+            "  | Indicator | Value |\n"
+            "  |-----------|-------|\n"
+            "  | Revenue   | 100000 |\n\n"
+            "STRICTLY PROHIBITED to put text in table cells, only numbers!(TEXT CAN ONLY BE IN TABLE HEADERS)"
+            "Table cells should contain ONLY numbers, try not to put a lot of data in table cells, it's better to use several tables than to put a lot of data in one cell."
+            "STRICTLY PROHIBITED to use emojis or special symbols (emojis, icons, etc.)!\n"
+            "Respond in English. Your response will be converted into a beautiful PDF document."
         )
         
         user_prompt = f"""
-На основе следующей информации о бизнесе составь подробный финансовый план:
+Based on the following business information, create a detailed financial plan:
 
-**Информация о бизнесе:**
-{business_info.get('business_type', 'Не указана')}
+**Business Information:**
+{business_info.get('business_type', 'Not specified')}
 
-**Текущая финансовая ситуация:**
-{business_info.get('financial_situation', 'Не указана')}
+**Current Financial Situation:**
+{business_info.get('financial_situation', 'Not specified')}
 
-**Цели и задачи:**
-{business_info.get('goals', 'Не указаны')}
+**Goals and Objectives:**
+{business_info.get('goals', 'Not specified')}
 
-Составь подробный финансовый план со следующими разделами (используй # для заголовков):
+Create a detailed financial plan with the following sections (use # for headings):
 
-# 1. Анализ текущей ситуации(не используй таблицу в этом разделе)
-- Оцени сильные и слабые стороны бизнеса
-- Проанализируй финансовое состояние
-- Выяви ключевые возможности и угрозы
+# 1. Current Situation Analysis(do not use a table in this section)
+- Assess the business's strengths and weaknesses
+- Analyze financial condition
+- Identify key opportunities and threats
 
-# 2. Рекомендации по оптимизации расходов(не используй таблицу в этом разделе)
-- Конкретные шаги для снижения затрат
-- Приоритизация расходов
-- Потенциальная экономия
+# 2. Expense Optimization Recommendations(do not use a table in this section)
+- Specific steps to reduce costs
+- Expense prioritization
+- Potential savings
 
-# 3. Стратегии увеличения доходов(не используй таблицу в этом разделе)
-- Новые источники дохода
-- Оптимизация ценообразования
-- Расширение клиентской базы
+# 3. Revenue Growth Strategies(do not use a table in this section)
+- New revenue sources
+- Pricing optimization
+- Client base expansion
 
-# 4. План действий(не используй таблицу в этом разделе)
-- Конкретные шаги с указанием сроков
-- Ключевые показатели эффективности (KPI)
-- Ресурсы, необходимые для реализации
+# 4. Action Plan(do not use a table in this section)
+- Specific steps with deadlines
+- Key Performance Indicators (KPI)
+- Resources required for implementation
 
-# 5. Финансовый прогноз(используй 1 таблицу в этом разделе)
-Создай таблицу с прогнозом на 3-6 месяцев в формате:
-| Месяц | Доходы (руб) | Расходы (руб) | Прибыль (руб) |
-|-------|--------------|---------------|---------------|
-| 1     | ...          | ...           | ...           |
+# 5. Financial Forecast(use 1 table in this section)
+Create a forecast table for 3-6 months in the format:
+| Month | Revenue (rub) | Expenses (rub) | Profit (rub) |
+|-------|---------------|----------------|--------------|
+| 1     | ...           | ...            | ...          |
 
-# 6. Управление рисками(не используй таблицу в этом разделе)
-- Основные риски и их вероятность
-- Стратегии минимизации рисков
-- План действий в кризисных ситуациях
+# 6. Risk Management(do not use a table in this section)
+- Main risks and their probability
+- Risk mitigation strategies
+- Action plan in crisis situations
 
-Будь конкретным, используй числа и примеры, основанные на предоставленной информации.
+Be specific, use numbers and examples based on the provided information.
 """
         
         return self.generate_response(user_prompt, system_prompt)
@@ -209,46 +209,48 @@ class AIClient:
                 - description: Description of services offered and target clients
         
         Returns:
-            List of 3 relevant client links with descriptions in Russian
+            List of 3 relevant client links with descriptions in English
             
         Raises:
             Exception: If API call fails
         """
         system_prompt = (
-            "Ты опытный эксперт по российским фриланс-биржам и поиску клиентов. "
-            "Твоя задача - предложить ТРИ конкретные ссылки с ПОИСКОВЫМИ ЗАПРОСАМИ на популярных РУССКИХ фриланс-биржах, "
-            "где пользователь может найти КОНКРЕТНЫЕ ПРОЕКТЫ и ЗАКАЗЫ от подходящих клиентов.\n\n"
-            "ВАЖНЫЕ ПРАВИЛА:\n"
-            "1. Используй ТОЛЬКО реальные российские фриланс-биржи:\n"
-            "   - FL.ru - https://www.fl.ru/projects/ (добавь ?search=ЗАПРОС для поиска)\n"
-            "   - Kwork - https://kwork.ru/projects (добавь ?query=ЗАПРОС для поиска)\n"
-            "   - Freelance.ru - https://freelance.ru/project/search/pro/ (добавь ?q=ЗАПРОС)\n"
-            "   - Weblancer - https://www.weblancer.net/jobs/ (добавь ?search=ЗАПРОС)\n"
-            "   - YouDo - https://youdo.com/\n"
-            "   - Work-zilla - https://work-zilla.com/\n\n"
-            "2. ОБЯЗАТЕЛЬНО формируй ссылки с конкретными поисковыми запросами на основе описания услуг\n"
-            "   Например: https://www.fl.ru/projects/?search=веб+разработка+сайт\n"
-            "3. Формат ответа СТРОГО:\n\n"
-            "🔗 *Название биржи*\n"
-            "Ссылка: [полная ссылка С ПОИСКОВЫМ ЗАПРОСОМ]\n"
-            "Что искать: [Конкретные ключевые слова для фильтрации]\n"
-            "Совет: [Как выделиться среди конкурентов на этой бирже]\n\n"
-            "4. Давай ТРИ разные биржи с РАЗНЫМИ поисковыми запросами\n"
-            "5. НЕ используй markdown заголовки (#), только обычный текст\n"
-            "6. Ссылки должны быть с корректными URL параметрами для поиска\n"
-            "7. Отвечай ТОЛЬКО на русском языке\n"
-            "8. НЕ добавляй никаких вступлений или заключений, ТОЛЬКО три рекомендации по формату"
+            "You are an experienced expert on Russian freelance platforms and client search. "
+            "Your task is to suggest THREE specific links with SEARCH QUERIES on popular RUSSIAN freelance platforms, "
+            "where the user can find SPECIFIC PROJECTS and ORDERS from suitable clients.\n\n"
+            "IMPORTANT RULES:\n"
+            "1. Use ONLY these three Russian freelance platforms with EXACT URL formats:\n\n"
+            "   FL.ru (projects):\n"
+            "   https://www.fl.ru/projects/?action=search&search_string=QUERY\n"
+            "   Example: https://www.fl.ru/projects/?action=search&search_string=website+development\n\n"
+            "   Kwork (projects for freelancers):\n"
+            "   https://kwork.ru/projects?query=QUERY\n"
+            "   Example: https://kwork.ru/projects?query=logo+creation\n\n"
+            "   Freelance.ru (projects):\n"
+            "   https://freelance.ru/project/search/pro?q=QUERY\n"
+            "   Example: https://freelance.ru/project/search/pro?q=web+design\n\n"
+            "2. STRICTLY use the specified URL formats! Replace QUERY with keywords using + (plus)\n"
+            "3. Response format STRICTLY:\n\n"
+            "🔗 *Platform Name*\n"
+            "Link: [full link WITH SEARCH QUERY]\n"
+            "What to search: [Specific keywords for filtering]\n"
+            "Tip: [How to stand out among competitors on this platform]\n\n"
+            "4. Provide ALL THREE platforms (FL.ru, Kwork, Freelance.ru) with relevant search queries\n"
+            "5. Do NOT use markdown headings (#), only plain text\n"
+            "6. Do NOT CHANGE the URL structure! Use ONLY the specified formats\n"
+            "7. Respond ONLY in English\n"
+            "8. Do NOT add any introductions or conclusions, ONLY three recommendations in the format"
         )
         
         user_prompt = f"""
-Найди ТРИ подходящие русские фриланс-биржи для поиска клиентов на основе следующей информации:
+Find THREE suitable Russian freelance platforms for client search based on the following information:
 
-{search_info.get('description', 'Не указано')}
+{search_info.get('description', 'Not specified')}
 
-ВАЖНО: Создай ссылки с конкретными поисковыми запросами, которые помогут найти КОНКРЕТНЫЕ ПРОЕКТЫ и ЗАКАЗЫ.
-Используй ключевые слова из описания услуг для формирования URL с параметрами поиска.
+IMPORTANT: Create links with specific search queries that will help find SPECIFIC PROJECTS and ORDERS.
+Use keywords from the service description to form URLs with search parameters.
 
-Предложи три конкретные ссылки с поисковыми запросами, описанием и советами.
+Suggest three specific links with search queries, descriptions and tips.
 """
         
         return self.generate_response(user_prompt, system_prompt)
@@ -262,46 +264,44 @@ class AIClient:
                 - description: Description of needed services and executor requirements
         
         Returns:
-            List of 3 relevant executor search links with descriptions in Russian
+            List of 3 relevant executor search links with descriptions in English
             
         Raises:
             Exception: If API call fails
         """
         system_prompt = (
-            "Ты опытный эксперт по российским фриланс-биржам и поиску исполнителей. "
-            "Твоя задача - предложить ТРИ конкретные ссылки с ПОИСКОВЫМИ ЗАПРОСАМИ на популярных РУССКИХ фриланс-биржах, "
-            "где пользователь может найти КОНКРЕТНЫХ ИСПОЛНИТЕЛЕЙ с нужными навыками.\n\n"
-            "ВАЖНЫЕ ПРАВИЛА:\n"
-            "1. Используй ТОЛЬКО реальные российские фриланс-биржи:\n"
-            "   - FL.ru - https://www.fl.ru/users/ (добавь ?search=НАВЫК для поиска)\n"
-            "   - Kwork - https://kwork.ru/user/ (добавь конкретную категорию)\n"
-            "   - Freelance.ru - https://freelance.ru/users (добавь ?q=НАВЫК)\n"
-            "   - Weblancer - https://www.weblancer.net/freelancers/ (добавь ?search=НАВЫК)\n"
-            "   - YouDo - https://youdo.com/\n"
-            "   - Work-zilla - https://work-zilla.com/\n\n"
-            "2. ОБЯЗАТЕЛЬНО формируй ссылки с конкретными поисковыми запросами на основе требований\n"
-            "   Например: https://www.fl.ru/users/?search=python+разработчик\n"
-            "3. Формат ответа СТРОГО:\n\n"
-            "🔗 *Название биржи*\n"
-            "Ссылка: [полная ссылка С ПОИСКОВЫМ ЗАПРОСОМ]\n"
-            "Что искать: [Конкретные навыки и ключевые слова для фильтрации]\n"
-            "Совет: [Как оценить квалификацию исполнителя на этой бирже]\n\n"
-            "4. Давай ТРИ разные биржи с РАЗНЫМИ поисковыми запросами\n"
-            "5. НЕ используй markdown заголовки (#), только обычный текст\n"
-            "6. Ссылки должны быть с корректными URL параметрами для поиска\n"
-            "7. Отвечай ТОЛЬКО на русском языке\n"
-            "8. НЕ добавляй никаких вступлений или заключений, ТОЛЬКО три рекомендации по формату"
+            "1. Use ONLY these three Russian freelance platforms with EXACT URL formats:\n\n"
+            "   FL.ru (freelancer search):\n"
+            "   https://www.fl.ru/freelancers/?action=search&show=all&search_string=QUERY\n"
+            "   Example: https://www.fl.ru/freelancers/?action=search&show=all&search_string=python+developer\n\n"
+            "   Kwork (service/executor search):\n"
+            "   https://kwork.ru/search?query=QUERY&c=0\n"
+            "   Example: https://kwork.ru/search?query=logo+creation&c=0\n\n"
+            "   Freelance.ru (freelancer search):\n"
+            "   https://freelance.ru/freelancers/search/simple?q=QUERY&m=hum\n"
+            "   Example: https://freelance.ru/freelancers/search/simple?q=web+designer&m=hum\n\n"
+            "2. STRICTLY use the specified URL formats! Replace QUERY with keywords using + (plus)\n"
+            "3. Response format STRICTLY:\n\n"
+            "🔗 *Platform Name*\n"
+            "Link: [full link WITH SEARCH QUERY]\n"
+            "What to search: [Specific skills and keywords for filtering]\n"
+            "Tip: [How to assess executor's qualifications on this platform]\n\n"
+            "4. Provide ALL THREE platforms (FL.ru, Kwork, Freelance.ru) with relevant search queries\n"
+            "5. Do NOT use markdown headings (#), only plain text\n"
+            "6. Do NOT CHANGE the URL structure! Use ONLY the specified formats\n"
+            "7. Respond ONLY in English\n"
+            "8. Do NOT add any introductions or conclusions, ONLY three recommendations in the format"
         )
         
         user_prompt = f"""
-Найди ТРИ подходящие русские фриланс-биржи для поиска исполнителей на основе следующей информации:
+Find THREE suitable Russian freelance platforms for executor search based on the following information:
 
-{search_info.get('description', 'Не указано')}
+{search_info.get('description', 'Not specified')}
 
-ВАЖНО: Создай ссылки с конкретными поисковыми запросами, которые помогут найти КОНКРЕТНЫХ ИСПОЛНИТЕЛЕЙ с нужными навыками.
-Используй ключевые слова из описания требований для формирования URL с параметрами поиска.
+IMPORTANT: Create links with specific search queries that will help find SPECIFIC EXECUTORS with the required skills.
+Use keywords from the requirements description to form URLs with search parameters.
 
-Предложи три конкретные ссылки с поисковыми запросами, описанием и советами.
+Suggest three specific links with search queries, descriptions and tips.
 """
         
         return self.generate_response(user_prompt, system_prompt)
@@ -323,53 +323,53 @@ class AIClient:
                 - executors_info: User's executors search info (optional)
         
         Returns:
-            List of 3-5 most compatible users with usernames and descriptions in Russian
+            List of 3-5 most compatible users with usernames and descriptions in English
             
         Raises:
             Exception: If API call fails
         """
         system_prompt = (
-            "Ты опытный бизнес-аналитик и нетворкинг эксперт. "
-            "Твоя задача - найти пользователей, которые могут быть полезны друг другу для делового сотрудничества.\n\n"
-            "ВАЖНЫЕ ПРАВИЛА:\n"
-            "1. Анализируй business_info, workers_info и executors_info пользователей\n"
-            "2. Ищи совпадения и взаимодополняющие бизнесы:\n"
-            "   - Один ищет клиентов, другой ищет исполнителей в той же сфере\n"
-            "   - Смежные направления бизнеса (например, дизайнер и разработчик)\n"
-            "   - Похожая целевая аудитория\n"
-            "   - Взаимовыгодное партнерство\n"
-            "3. Формат ответа СТРОГО (для каждого пользователя):\n\n"
+            "You are an experienced business analyst and networking expert. "
+            "Your task is to find users who can be useful to each other for business collaboration.\n\n"
+            "IMPORTANT RULES:\n"
+            "1. Analyze users' business_info, workers_info and executors_info\n"
+            "2. Look for matches and complementary businesses:\n"
+            "   - One is looking for clients, another is looking for executors in the same field\n"
+            "   - Related business directions (for example, designer and developer)\n"
+            "   - Similar target audience\n"
+            "   - Mutually beneficial partnership\n"
+            "3. Response format STRICTLY (for each user):\n\n"
             "👤 *@username*\n"
-            "*Бизнес*: [Краткое описание бизнеса в 1-2 предложениях]\n"
-            "*Почему подходит*: [Конкретное объяснение, как вы можете помочь друг другу]\n"
-            "*Идея для сотрудничества*: [Конкретная идея взаимодействия]\n\n"
-            "4. Верни 3-5 САМЫХ подходящих пользователей\n"
-            "5. Если username = None, используй формат: @пользователь_[user_id]\n"
-            "6. Отвечай ТОЛЬКО на русском языке\n"
-            "7. НЕ добавляй никаких вступлений или заключений, ТОЛЬКО рекомендации\n"
-            "8. Если нет подходящих пользователей, верни: 'Подходящих пользователей не найдено'\n"
-            "9. Генерируй ответ, так, как будто ты общаешься с ТЕКУЩИМ пользователем, а не с ДРУГИМИ пользователями\n"
-            "10. Не упоминай username ТЕКУЩЕГО ПОЛЬЗОВАТЕЛЯ"
+            "*Business*: [Brief business description in 1-2 sentences]\n"
+            "*Why suitable*: [Specific explanation of how you can help each other]\n"
+            "*Collaboration idea*: [Specific interaction idea]\n\n"
+            "4. Return 3-5 MOST suitable users\n"
+            "5. If username = None, use format: @user_[user_id]\n"
+            "6. Respond ONLY in English\n"
+            "7. Do NOT add any introductions or conclusions, ONLY recommendations\n"
+            "8. If no suitable users found, return: 'No suitable users found'\n"
+            "9. Generate response as if you are communicating with the CURRENT user, not with OTHER users\n"
+            "10. Do not mention the CURRENT USER's username"
         )
         
         # Prepare user data for AI
         current_user_desc = f"""
-ИНФОРМАЦИЯ О ТЕКУЩЕМ ПОЛЬЗОВАТЕЛЕ:
+INFORMATION ABOUT THE CURRENT USER:
 User ID: {current_user_info.get('user_id')}
-Username: @{current_user_info.get('username') or 'не указан'}
-Business Info: {current_user_info.get('business_info', 'Не указано')}
+Username: @{current_user_info.get('username') or 'not specified'}
+Business Info: {current_user_info.get('business_info', 'Not specified')}
 """
         
-        other_users_desc = "ДРУГИЕ ПОЛЬЗОВАТЕЛИ В СИСТЕМЕ:\n\n"
+        other_users_desc = "OTHER USERS IN THE SYSTEM:\n\n"
         for i, user in enumerate(all_users, 1):
-            username = user.get('username') or f"пользователь_{user.get('user_id')}"
+            username = user.get('username') or f"user_{user.get('user_id')}"
             other_users_desc += f"""
-Пользователь {i}:
+User {i}:
 Username: @{username}
 User ID: {user.get('user_id')}
-Business Info: {user.get('business_info', 'Не указано')}
-Workers Info: {user.get('workers_info', 'Не указано')}
-Executors Info: {user.get('executors_info', 'Не указано')}
+Business Info: {user.get('business_info', 'Not specified')}
+Workers Info: {user.get('workers_info', 'Not specified')}
+Executors Info: {user.get('executors_info', 'Not specified')}
 ---
 """
         
@@ -378,8 +378,8 @@ Executors Info: {user.get('executors_info', 'Не указано')}
 
 {other_users_desc}
 
-Найди 3-5 пользователей, которые могли бы быть полезны текущему пользователю для делового сотрудничества.
-Сфокусируйся на взаимовыгодном партнерстве и комплементарных бизнесах.
+Find 3-5 users who could be useful to the current user for business collaboration.
+Focus on mutually beneficial partnerships and complementary businesses.
 """
         
         return self.generate_response(user_prompt, system_prompt)
@@ -399,62 +399,62 @@ Executors Info: {user.get('executors_info', 'Не указано')}
         Returns:
             Dictionary with validation result:
                 - is_valid: bool - True if business is legal, False otherwise
-                - message: str - "Да" if valid, or detailed reason for rejection if not valid
+                - message: str - "Yes" if valid, or detailed reason for rejection if not valid
                 
         Raises:
             Exception: If API call fails
         """
         system_prompt = (
-            "Ты юридический эксперт по законодательству Российской Федерации. "
-            "Твоя задача - определить, является ли описанный бизнес легальным согласно законодательству РФ.\n\n"
-            "ВАЖНЫЕ ПРАВИЛА:\n"
-            "1. Проверяй бизнес на соответствие законам РФ, включая:\n"
-            "   - Уголовный кодекс РФ (УК РФ)\n"
-            "   - Кодекс об административных правонарушениях (КоАП РФ)\n"
-            "   - Федеральные законы о предпринимательской деятельности\n"
-            "   - Законы о защите прав потребителей\n"
-            "   - Антимонопольное законодательство\n\n"
-            "2. ЗАПРЕЩЕННЫЕ виды деятельности:\n"
-            "   - Оборот наркотических средств и психотропных веществ (ст. 228-234 УК РФ)\n"
-            "   - Организация заказных убийств, насилие (ст. 105-111, 33 УК РФ)\n"
-            "   - Торговля людьми, сексуальная эксплуатация (ст. 127.1-127.2 УК РФ)\n"
-            "   - Оружейный бизнес без лицензии (ст. 222-226 УК РФ)\n"
-            "   - Отмывание денег и финансирование терроризма (ст. 174, 205.1 УК РФ)\n"
-            "   - Мошенничество и финансовые пирамиды (ст. 159, 172.2 УК РФ)\n"
-            "   - Азартные игры без лицензии (ФЗ-244 \"О государственном регулировании деятельности по организации и проведению азартных игр\")\n"
-            "   - Экстремистская деятельность (ст. 280-282 УК РФ)\n"
-            "   - Нарушение авторских прав и пиратство (ст. 146 УК РФ)\n"
-            "   - Производство и распространение порнографии (ст. 242 УК РФ)\n\n"
-            "3. Формат ответа СТРОГО:\n"
-            "   - Если бизнес ЛЕГАЛЕН: ответь ТОЛЬКО словом \"Да\"\n"
-            "   - Если бизнес НЕЛЕГАЛЕН: ответь в формате:\n"
-            "     \"К сожалению, создание бизнеса в данной сфере невозможно.\n\n"
-            "     Причина: [тактичное объяснение]\n\n"
-            "     Правовое обоснование: [ссылки на конкретные статьи законов РФ]\n\n"
-            "     Мы рекомендуем рассмотреть легальные альтернативы для вашего бизнеса.\"\n\n"
-            "4. Будь тактичным, но строгим в оценке\n"
-            "5. Если есть сомнения, но явных нарушений нет - считай бизнес легальным\n"
-            "6. Обращай внимание на завуалированные описания запрещенной деятельности\n"
-            "7. Отвечай ТОЛЬКО на русском языке\n"
-            "8. НЕ добавляй никаких дополнительных комментариев или вопросов"
+            "You are a legal expert on the legislation of the Russian Federation. "
+            "Your task is to determine whether the described business is legal according to the legislation of the Russian Federation.\n\n"
+            "IMPORTANT RULES:\n"
+            "1. Check the business for compliance with the laws of the Russian Federation, including:\n"
+            "   - Criminal Code of the Russian Federation (CC RF)\n"
+            "   - Code of Administrative Offenses of the Russian Federation (CAO RF)\n"
+            "   - Federal laws on entrepreneurial activity\n"
+            "   - Consumer protection laws\n"
+            "   - Antimonopoly legislation\n\n"
+            "2. PROHIBITED types of activities:\n"
+            "   - Trafficking in narcotic drugs and psychotropic substances (Art. 228-234 CC RF)\n"
+            "   - Organization of contract killings, violence (Art. 105-111, 33 CC RF)\n"
+            "   - Human trafficking, sexual exploitation (Art. 127.1-127.2 CC RF)\n"
+            "   - Weapons business without license (Art. 222-226 CC RF)\n"
+            "   - Money laundering and terrorist financing (Art. 174, 205.1 CC RF)\n"
+            "   - Fraud and financial pyramids (Art. 159, 172.2 CC RF)\n"
+            "   - Gambling without license (Federal Law 244 \"On State Regulation of Activities for Organization and Conduct of Gambling\")\n"
+            "   - Extremist activity (Art. 280-282 CC RF)\n"
+            "   - Copyright infringement and piracy (Art. 146 CC RF)\n"
+            "   - Production and distribution of pornography (Art. 242 CC RF)\n\n"
+            "3. Response format STRICTLY:\n"
+            "   - If business is LEGAL: answer ONLY with the word \"Yes\"\n"
+            "   - If business is ILLEGAL: answer in the format:\n"
+            "     \"Unfortunately, creating a business in this field is impossible.\n\n"
+            "     Reason: [tactful explanation]\n\n"
+            "     Legal justification: [references to specific articles of Russian Federation laws]\n\n"
+            "     We recommend considering legal alternatives for your business.\"\n\n"
+            "4. Be tactful, but strict in assessment\n"
+            "5. If there are doubts, but no obvious violations - consider the business legal\n"
+            "6. Pay attention to veiled descriptions of prohibited activities\n"
+            "7. Respond ONLY in English\n"
+            "8. Do NOT add any additional comments or questions"
         )
         
         user_prompt = f"""
-Проанализируй следующую информацию о бизнесе и определи, является ли он легальным согласно законодательству РФ:
+Analyze the following business information and determine if it is legal according to the legislation of the Russian Federation:
 
-**Название бизнеса:**
-{business_info.get('business_name', 'Не указано')}
+**Business Name:**
+{business_info.get('business_name', 'Not specified')}
 
-**Тип бизнеса и целевая аудитория:**
-{business_info.get('business_type', 'Не указано')}
+**Business Type and Target Audience:**
+{business_info.get('business_type', 'Not specified')}
 
-**Финансовая ситуация:**
-{business_info.get('financial_situation', 'Не указано')}
+**Financial Situation:**
+{business_info.get('financial_situation', 'Not specified')}
 
-**Цели и задачи:**
-{business_info.get('goals', 'Не указано')}
+**Goals and Objectives:**
+{business_info.get('goals', 'Not specified')}
 
-Ответь либо "Да" если бизнес легален, либо дай тактичное объяснение с правовым обоснованием, если бизнес нелегален.
+Answer either "Yes" if the business is legal, or give a tactful explanation with legal justification if the business is illegal.
 """
         
         try:
@@ -462,10 +462,10 @@ Executors Info: {user.get('executors_info', 'Не указано')}
             response = response.strip()
             
             # Check if business is valid
-            if response == "Да" or response.lower() == "да":
+            if response == "Yes" or response.lower() == "yes":
                 return {
                     'is_valid': True,
-                    'message': "Да"
+                    'message': "Yes"
                 }
             else:
                 return {
@@ -509,12 +509,12 @@ Executors Info: {user.get('executors_info', 'Не указано')}
             recent_tasks = [t for t in task_titles if t][:5]
             recent_hours = task_hours[:5] if task_hours else []
             
-            employee_text = f"Сотрудник: @{username} ({first_name})\n"
-            employee_text += f"Выполнено задач: {completed_count}\n"
-            employee_text += f"Отказов от задач: {abandonments_count}\n"
+            employee_text = f"Employee: @{username} ({first_name})\n"
+            employee_text += f"Completed tasks: {completed_count}\n"
+            employee_text += f"Task abandonments: {abandonments_count}\n"
             
             if recent_tasks:
-                employee_text += "Последние задачи:\n"
+                employee_text += "Recent tasks:\n"
                 for i, task in enumerate(recent_tasks):
                     employee_text += f"  - {task}"
                     # Add time if available
@@ -522,15 +522,15 @@ Executors Info: {user.get('executors_info', 'Не указано')}
                         hours = recent_hours[i]
                         if hours < 1:
                             minutes = int(hours * 60)
-                            employee_text += f" (выполнена за {minutes} мин)"
+                            employee_text += f" (completed in {minutes} min)"
                         elif hours < 24:
-                            employee_text += f" (выполнена за {hours:.1f} ч)"
+                            employee_text += f" (completed in {hours:.1f} h)"
                         else:
                             days = hours / 24
-                            employee_text += f" (выполнена за {days:.1f} дн)"
+                            employee_text += f" (completed in {days:.1f} days)"
                     employee_text += "\n"
             else:
-                employee_text += "Еще не выполнял задачи\n"
+                employee_text += "Has not completed any tasks yet\n"
             
             employees_info.append({
                 'user_id': user_id,
@@ -539,27 +539,27 @@ Executors Info: {user.get('executors_info', 'Не указано')}
             })
         
         # Prepare prompt for AI
-        prompt = f"""Новая задача:
-Название: {task_title}
-Описание: {task_description}
+        prompt = f"""New task:
+Title: {task_title}
+Description: {task_description}
 
-Доступные сотрудники:
+Available employees:
 {chr(10).join([emp['text'] for emp in employees_info])}
 
-Проанализируй опыт каждого сотрудника и порекомендуй ОДНОГО наиболее подходящего для этой задачи.
-Ответь ТОЛЬКО в формате:
+Analyze each employee's experience and recommend ONE most suitable for this task.
+Answer ONLY in the format:
 USERNAME: @username
-ПРИЧИНА: краткое объяснение почему именно этот сотрудник подходит лучше всего"""
+REASON: brief explanation why this particular employee is the best fit"""
 
         try:
             system_prompt = (
-                "Ты HR-менеджер с опытом в распределении задач. "
-                "Анализируй опыт сотрудников и рекомендуй лучшего кандидата на основе их истории выполненных задач. "
-                "Учитывай не только опыт, но и скорость выполнения похожих задач. "
-                "Предпочитай сотрудников, которые быстрее справляются с похожими задачами. "
-                "ВАЖНО: Обращай внимание на количество отказов от задач - сотрудники с большим количеством отказов менее надежны. "
-                "Отдавай предпочтение сотрудникам с меньшим количеством отказов и большим количеством выполненных задач. "
-                "Отвечай СТРОГО в указанном формате на русском языке."
+                "You are an HR manager with experience in task assignment. "
+                "Analyze employees' experience and recommend the best candidate based on their completed task history. "
+                "Consider not only experience, but also the speed of completing similar tasks. "
+                "Prefer employees who handle similar tasks faster. "
+                "IMPORTANT: Pay attention to the number of task abandonments - employees with many abandonments are less reliable. "
+                "Give preference to employees with fewer abandonments and more completed tasks. "
+                "Respond STRICTLY in the specified format in English."
             )
             
             response = self.generate_response(prompt, system_prompt)
@@ -572,8 +572,8 @@ USERNAME: @username
             for line in lines:
                 if line.startswith('USERNAME:'):
                     username = line.replace('USERNAME:', '').strip().lstrip('@')
-                elif line.startswith('ПРИЧИНА:'):
-                    reasoning = line.replace('ПРИЧИНА:', '').strip()
+                elif line.startswith('REASON:'):
+                    reasoning = line.replace('REASON:', '').strip()
             
             if not username:
                 logger.warning("AI didn't provide username in recommendation")
@@ -585,7 +585,7 @@ USERNAME: @username
                     return {
                         'user_id': emp['user_id'],
                         'username': username,
-                        'reasoning': reasoning or "AI рекомендует этого сотрудника"
+                        'reasoning': reasoning or "AI recommends this employee"
                     }
             
             logger.warning(f"AI recommended unknown username: {username}")
@@ -621,44 +621,44 @@ USERNAME: @username
         
         # Prepare business info for AI
         business_desc = f"""
-Информация о бизнесе:
-Название: {business_info.get('business_name', 'Не указано')}
-Тип бизнеса: {business_info.get('business_type', 'Не указано')}
-Финансовая ситуация: {business_info.get('financial_situation', 'Не указано')}
-Цели: {business_info.get('goals', 'Не указано')}
+Business Information:
+Name: {business_info.get('business_name', 'Not specified')}
+Business Type: {business_info.get('business_type', 'Not specified')}
+Financial Situation: {business_info.get('financial_situation', 'Not specified')}
+Goals: {business_info.get('goals', 'Not specified')}
 """
         
         # Prepare candidates info for AI
-        candidates_desc = "Доступные кандидаты:\n\n"
+        candidates_desc = "Available candidates:\n\n"
         for i, candidate in enumerate(candidates, 1):
-            username = candidate.get('username') or f"пользователь_{candidate.get('user_id')}"
+            username = candidate.get('username') or f"user_{candidate.get('user_id')}"
             first_name = candidate.get('first_name', '')
             rating = candidate.get('overall_rating')
-            rating_str = f"Рейтинг: {rating}" if rating is not None else "Рейтинг: нет опыта"
+            rating_str = f"Rating: {rating}" if rating is not None else "Rating: no experience"
             
-            candidates_desc += f"""Кандидат {i}:
+            candidates_desc += f"""Candidate {i}:
 Username: @{username}
-Имя: {first_name}
+Name: {first_name}
 {rating_str}
-Описание: {candidate.get('user_info', 'Не указано')}
+Description: {candidate.get('user_info', 'Not specified')}
 
 ---
 """
         
         system_prompt = (
-            "Ты опытный HR-менеджер и рекрутер. "
-            "Твоя задача - выбрать до 3 наиболее подходящих кандидатов для бизнеса на основе их описаний.\n\n"
-            "ВАЖНЫЕ ПРАВИЛА:\n"
-            "1. Анализируй соответствие навыков и опыта кандидата требованиям бизнеса\n"
-            "2. Учитывай рейтинг кандидата (выше = лучше), но не делай его единственным критерием\n"
-            "3. Отдавай предпочтение кандидатам с релевантным опытом\n"
-            "4. Верни от 1 до 3 наиболее подходящих кандидатов\n"
-            "5. Формат ответа СТРОГО (для каждого кандидата):\n\n"
-            "КАНДИДАТ: @username\n"
-            "ПРИЧИНА: [краткое объяснение почему этот кандидат подходит]\n\n"
-            "6. НЕ добавляй никаких дополнительных комментариев или вступлений\n"
-            "7. Если ни один кандидат не подходит, верни: 'ПОДХОДЯЩИХ КАНДИДАТОВ НЕТ'\n"
-            "8. Отвечай ТОЛЬКО на русском языке"
+            "You are an experienced HR manager and recruiter. "
+            "Your task is to select up to 3 most suitable candidates for the business based on their descriptions.\n\n"
+            "IMPORTANT RULES:\n"
+            "1. Analyze the match between candidate's skills and experience and business requirements\n"
+            "2. Consider candidate's rating (higher = better), but do not make it the only criterion\n"
+            "3. Give preference to candidates with relevant experience\n"
+            "4. Return from 1 to 3 most suitable candidates\n"
+            "5. Response format STRICTLY (for each candidate):\n\n"
+            "CANDIDATE: @username\n"
+            "REASON: [brief explanation why this candidate is suitable]\n\n"
+            "6. Do NOT add any additional comments or introductions\n"
+            "7. If no candidate is suitable, return: 'NO SUITABLE CANDIDATES'\n"
+            "8. Respond ONLY in English"
         )
         
         user_prompt = f"""
@@ -666,15 +666,15 @@ Username: @{username}
 
 {candidates_desc}
 
-Выбери до 3 наиболее подходящих кандидатов для этого бизнеса.
-Сортируй по релевантности (самый подходящий первым).
+Select up to 3 most suitable candidates for this business.
+Sort by relevance (most suitable first).
 """
         
         try:
             response = self.generate_response(user_prompt, system_prompt)
             
             # Parse response
-            if 'ПОДХОДЯЩИХ КАНДИДАТОВ НЕТ' in response.upper():
+            if 'NO SUITABLE CANDIDATES' in response.upper():
                 return []
             
             selected = []
@@ -684,12 +684,12 @@ Username: @{username}
             
             for line in lines:
                 line = line.strip()
-                if line.startswith('КАНДИДАТ:'):
+                if line.startswith('CANDIDATE:'):
                     # Save previous candidate if exists
                     if current_username:
                         # Find candidate by username
                         for candidate in candidates:
-                            cand_username = candidate.get('username') or f"пользователь_{candidate.get('user_id')}"
+                            cand_username = candidate.get('username') or f"user_{candidate.get('user_id')}"
                             if cand_username == current_username:
                                 candidate_copy = candidate.copy()
                                 candidate_copy['reasoning'] = current_reasoning
@@ -697,15 +697,15 @@ Username: @{username}
                                 break
                     
                     # Start new candidate
-                    current_username = line.replace('КАНДИДАТ:', '').strip().lstrip('@')
+                    current_username = line.replace('CANDIDATE:', '').strip().lstrip('@')
                     current_reasoning = None
-                elif line.startswith('ПРИЧИНА:'):
-                    current_reasoning = line.replace('ПРИЧИНА:', '').strip()
+                elif line.startswith('REASON:'):
+                    current_reasoning = line.replace('REASON:', '').strip()
             
             # Don't forget the last candidate
             if current_username:
                 for candidate in candidates:
-                    cand_username = candidate.get('username') or f"пользователь_{candidate.get('user_id')}"
+                    cand_username = candidate.get('username') or f"user_{candidate.get('user_id')}"
                     if cand_username == current_username:
                         candidate_copy = candidate.copy()
                         candidate_copy['reasoning'] = current_reasoning
