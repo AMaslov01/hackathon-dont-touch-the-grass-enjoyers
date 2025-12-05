@@ -20,8 +20,8 @@ nano config.env  # Проверить TELEGRAM_BOT_TOKEN и настройки �
 
 ### 4. Создать базу данных
 ```bash
-sudo -u postgres psql -c "CREATE DATABASE bot_db;"
-sudo -u postgres psql -d bot_db -f schema.sql
+sudo -u postgres psql -c "CREATE DATABASE telegram_bot;"
+sudo -u postgres psql -d telegram_bot < schema.sql
 ```
 
 ### 5. Загрузить тестовые данные в RAG
@@ -31,7 +31,7 @@ sudo -u postgres psql -d bot_db -f schema.sql
 
 ### 6. Запустить бота
 ```bash
-python bot.py
+python3 bot.py
 ```
 
 **При первом запуске с AI_MODE=local:**
@@ -62,15 +62,15 @@ pip install -r requirements.txt
 nano config.env  # Убедиться что TELEGRAM_BOT_TOKEN и БД настроены
 
 # Создать БД
-sudo -u postgres psql -c "CREATE DATABASE bot_db;"
-sudo -u postgres psql -d bot_db -f schema.sql
+sudo -u postgres psql -c "CREATE DATABASE telegram_bot;"
+sudo -u postgres psql -d telegram_bot < schema.sql
 
 # Загрузить данные в RAG
 chmod +x load_documents.sh
 ./load_documents.sh test_documents
 
 # Запустить (модель скачается автоматически при первом запуске)
-python bot.py
+python3 bot.py
 ```
 
 ### Способ 2: SCP (копирование файлов)
@@ -272,17 +272,17 @@ python rag_tools/manage_rag.py --stats
 ### БД не подключается
 ```bash
 sudo systemctl status postgresql
-psql -U postgres -d bot_db -c "SELECT 1;"
+psql -U postgres -d telegram_bot -c "SELECT 1;"
 ```
 
 ### Бот не запускается
 ```bash
 # Проверить конфиг
 source venv/bin/activate
-python -c "from config import Config; Config.validate()"
+python3 -c "from config import Config; Config.validate()"
 
 # Посмотреть логи
-python bot.py
+python3 bot.py
 ```
 
 ---
