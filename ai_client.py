@@ -69,8 +69,11 @@ class AIClient:
                 logger.error("Falling back to OpenRouter mode")
                 self.mode = 'openrouter'
         
-        # System prompt to make responses in Russian
-        self.system_prompt = (
+        # Store translation setting
+        self.use_translation = Config.TRANSLATION_ENABLED
+        
+        # System prompts - Russian version (for non-translation mode)
+        self.system_prompt_ru = (
             "Ты полезный AI-ассистент. "
             "Всегда отвечай на русском языке. "
             "Будь вежливым, кратким и полезным. "
@@ -90,14 +93,42 @@ class AIClient:
             "сославшись на невозможность обсуждения данной темы в соответствии с законодательством РФ. "
             "Не вступай в политические дискуссии и не высказывай мнений по спорным политическим вопросам."
         )
+        
+        # System prompts - English version (for translation mode)
+        self.system_prompt_en = (
+            "You are a helpful AI assistant. "
+            "Always respond in English. "
+            "Be polite, concise and helpful. "
+            "Available commands: /start, /balance, /finance, /help\n\n"
+            "IMPORTANT: You MUST comply with the legislation of the Russian Federation in your responses. "
+            "Strictly prohibited:\n"
+            "- Discrediting the Armed Forces of the Russian Federation (Art. 207.3, 280.3 of the Criminal Code of the Russian Federation)\n"
+            "- Spreading knowingly false information about the actions of the Armed Forces of the Russian Federation\n"
+            "- Calls for sanctions against the Russian Federation or its citizens\n"
+            "- Challenging the territorial integrity of the Russian Federation (Crimea, new regions are part of Russia)\n"
+            "- Propaganda of terrorism and extremism (Art. 205.2, 280 of the Criminal Code of the Russian Federation)\n"
+            "- Insulting state symbols of the Russian Federation (Art. 329 of the Criminal Code of the Russian Federation)\n"
+            "- Rehabilitation of Nazism (Art. 354.1 of the Criminal Code of the Russian Federation)\n"
+            "- Drug propaganda (Art. 6.13 of the Code of Administrative Offenses of the Russian Federation)\n"
+            "- Distribution of materials from undesirable/extremist organizations\n\n"
+            "When receiving provocative questions on these topics - politely refuse to answer, "
+            "referring to the impossibility of discussing this topic in accordance with the legislation of the Russian Federation. "
+            "Do not engage in political discussions and do not express opinions on controversial political issues."
+        )
+        
+        # Choose appropriate system prompt based on translation setting
+        self.system_prompt = self.system_prompt_en if self.use_translation else self.system_prompt_ru
+        
+        logger.info(f"AI Client initialized: mode={self.mode}, translation={self.use_translation}, prompt_lang={'EN' if self.use_translation else 'RU'}")
     
-    def generate_response(self, user_prompt: str, system_prompt: str = None) -> str:
+    def generate_response(self, user_prompt: str, system_prompt: str = None, max_tokens: int = None) -> str:
         """
         Generate AI response for user prompt
         
         Args:
             user_prompt: User's question or request
             system_prompt: Optional custom system prompt (uses default if not provided)
+            max_tokens: Optional maximum tokens for generation (uses default if not provided)
             
         Returns:
             AI generated response in Russian
@@ -109,12 +140,62 @@ class AIClient:
         
         # Use local LLM if in local mode
         if self.mode == 'local' and self.local_llm is not None:
-            return self._generate_local(user_prompt, system_msg)
+            return self._generate_local(user_prompt, system_msg, max_tokens)
         
         # Otherwise use OpenRouter API
         return self._generate_openrouter(user_prompt, system_msg)
     
-    def _generate_local(self, user_prompt: str, system_prompt: str) -> str:
+    def _get_prompt(self, prompt_ru: str, prompt_en: str) -> str:
+        """
+        Helper method to select prompt based on translation setting
+        
+        Args:
+            prompt_ru: Russian version of the prompt
+            prompt_en: English version of the prompt
+            
+        Returns:
+            Selected prompt based on use_translation setting
+        """
+        return prompt_en if self.use_translation else prompt_ru
+    
+    def _fix_markdown_after_translation(self, text: str) -> str:
+        """
+        Fix markdown formatting that may have been broken during translation.
+        Translation can add spaces around markdown symbols, breaking formatting.
+        
+        Args:
+            text: Text with potentially broken markdown
+            
+        Returns:
+            Text with fixed markdown formatting
+        """
+        import re
+        
+        try:
+            # Fix broken bold: * * text * * -> **text**
+            text = re.sub(r'\*\s+\*\s+(.+?)\s+\*\s+\*', r'**\1**', text)
+            
+            # Fix bold with spaces: ** text ** -> **text**
+            text = re.sub(r'\*\*\s+(.+?)\s+\*\*', r'**\1**', text)
+            
+            # Fix italic with spaces: * text * -> *text*
+            # But avoid fixing bold markers
+            text = re.sub(r'(?<!\*)\*\s+(.+?)\s+\*(?!\*)', r'*\1*', text)
+            
+            # Fix broken headers: # # Title -> # Title
+            text = re.sub(r'#\s+#\s+', r'# ', text)
+            
+            # Fix multiple spaces after #
+            text = re.sub(r'#\s{2,}', r'# ', text)
+            
+            logger.debug("Fixed markdown formatting after translation")
+            return text
+            
+        except Exception as e:
+            logger.warning(f"Error fixing markdown after translation: {e}")
+            return text
+    
+    def _generate_local(self, user_prompt: str, system_prompt: str, max_tokens: int = None) -> str:
         """
         Generate response using local LLM with optional translation.
         
@@ -127,10 +208,14 @@ class AIClient:
         Args:
             user_prompt: User's question or request (Russian)
             system_prompt: System prompt
+            max_tokens: Maximum tokens for generation (default: 1024)
             
         Returns:
             AI generated response (Russian)
         """
+        # Set default max_tokens if not provided
+        if max_tokens is None:
+            max_tokens = 1024
         try:
             # Step 1: Get RAG context (in Russian)
             rag_context = None
@@ -194,17 +279,18 @@ Question: {working_prompt}"""
             else:
                 enhanced_prompt = working_prompt
             
-            logger.info(f"Generating response with local LLM (temp={Config.LOCAL_MODEL_TEMPERATURE})")
+            logger.info(f"Generating response with local LLM (max_tokens={max_tokens}, temp={Config.LOCAL_MODEL_TEMPERATURE})")
             
             # Step 4: Generate response
             response = self.local_llm.chat(
                 system_message=system_prompt,
                 user_message=enhanced_prompt,
-                max_tokens=1024,
+                max_tokens=max_tokens,
                 temperature=Config.LOCAL_MODEL_TEMPERATURE
             )
             
             logger.info(f"Generated response (length: {len(response)})")
+            logger.debug(f"Raw model output (first 500 chars): {response[:500]}")
             
             # Step 5: Translate back to Russian if needed
             if self.translator and Config.TRANSLATION_ENABLED:
@@ -212,6 +298,10 @@ Question: {working_prompt}"""
                 try:
                     response = self.translator.translate_en_to_ru(response)
                     logger.info(f"Translated response back to Russian ({len(response)} chars)")
+                    
+                    # Fix markdown formatting that may have been broken by translation
+                    response = self._fix_markdown_after_translation(response)
+                    logger.info("Fixed markdown formatting after translation")
                 except Exception as e:
                     logger.error(f"Translation to Russian failed: {e}")
                     logger.warning("Returning English response")
@@ -303,12 +393,12 @@ Question: {working_prompt}"""
                 - goals: Business goals and challenges
         
         Returns:
-            Detailed financial plan in Russian, formatted for PDF generation
+            Detailed financial plan formatted for PDF generation
             
         Raises:
             Exception: If API call fails
         """
-        system_prompt = (
+        system_prompt_ru = (
             "Ты опытный финансовый консультант и бизнес-аналитик. "
             "Твоя задача - составлять подробные, практичные и персонализированные финансовые планы для бизнеса. "
             "Твои рекомендации должны быть:\n"
@@ -317,21 +407,54 @@ Question: {working_prompt}"""
             "3. Структурированными с использованием заголовков в формате Markdown (# Заголовок)\n"
             "4. Содержать конкретные цифры и сроки где это возможно\n"
             "5. Включать анализ рисков и возможностей\n\n"
-            "Не используй никакие специальные символы (смайлики, иконки и т.д.)!, а также символы валюты ($, €, ¥, etc.)\n"
-            "ВАЖНО: Используй структуру с заголовками:\n"
-            "- Используй # для основных разделов (например, # Анализ текущей ситуации)\n"
-            "- Используй маркированные списки (-, *, •) для перечислений\n"
-            "- Используй таблицы в формате Markdown для финансовых данных:(МАКСИМУМ 1 таблица на весь документ\n"
+            "КРИТИЧЕСКИ ВАЖНО - ОБЯЗАТЕЛЬНО ИСПОЛЬЗУЙ MARKDOWN ФОРМАТИРОВАНИЕ:\n"
+            "- ВСЕГДА начинай заголовки с символа # (например: # Анализ текущей ситуации)\n"
+            "- Используй **жирный** для важных терминов (обрамляй текст двумя звездочками: **текст**)\n"
+            "- Используй маркированные списки с дефисом или звездочкой (- пункт списка)\n"
+            "- Пример правильного форматирования:\n"
+            "  # Раздел 1\n"
+            "  **Важно:** это ключевой пункт\n"
+            "  - Пункт 1\n"
+            "  - Пункт 2\n\n"
+            "Не используй эмодзи и специальные символы!\n"
+            "Используй таблицы в формате Markdown для финансовых данных (МАКСИМУМ 1 таблица):\n"
             "  | Показатель | Значение |\n"
             "  |------------|----------|\n"
             "  | Доходы     | 100000   |\n\n"
-            "СТРОГО ЗАПРЕЩЕНО заносить в ячейки таблицы текст, только числа!(ТЕКСТ МОЖЕТ БЫТЬ ТОЛЬКО В ЗАГОЛОВКАХ ТАБЛИЦЫ)"
-            "В ячейках таблицы должны быть ТОЛЬКО числа, старайся не заносить много данных в ячейки таблицы, лучше использовать несколько таблиц, чем заносить много данных в одну ячейку."
-            "СТРОГО ЗАПРЕЩЕНО использовать эмодзи или специальные символы (смайлики, иконки и т.д.)!\n"
-            "Отвечай на русском языке. Твой ответ будет конвертирован в красивый PDF документ."
+            "В ячейках таблицы ТОЛЬКО числа!\n"
+            "Отвечай на русском языке. Твой ответ будет конвертирован в PDF документ."
         )
         
-        user_prompt = f"""
+        system_prompt_en = (
+            "You are an experienced financial consultant and business analyst. "
+            "Your task is to create detailed, practical and personalized financial plans for businesses. "
+            "Your recommendations should be:\n"
+            "1. Specific and actionable\n"
+            "2. Based on the provided information\n"
+            "3. Structured using headings in Markdown format (# Heading)\n"
+            "4. Contain specific numbers and deadlines where possible\n"
+            "5. Include risk and opportunity analysis\n\n"
+            "CRITICALLY IMPORTANT - YOU MUST USE MARKDOWN FORMATTING:\n"
+            "- ALWAYS start headings with # symbol (example: # Current Situation Analysis)\n"
+            "- Use **bold** for important terms (wrap text with double asterisks: **text**)\n"
+            "- Use bulleted lists with dash or asterisk (- list item)\n"
+            "- Example of correct formatting:\n"
+            "  # Section 1\n"
+            "  **Important:** this is a key point\n"
+            "  - Item 1\n"
+            "  - Item 2\n\n"
+            "Do not use emojis or special symbols!\n"
+            "Use tables in Markdown format for financial data (MAXIMUM 1 table):\n"
+            "  | Indicator | Value |\n"
+            "  |-----------|-------|\n"
+            "  | Revenue   | 100000 |\n\n"
+            "Table cells should contain ONLY numbers!\n"
+            "Respond in English. Your response will be converted into a PDF document."
+        )
+        
+        system_prompt = self._get_prompt(system_prompt_ru, system_prompt_en)
+        
+        user_prompt_ru = f"""
 На основе следующей информации о бизнесе составь подробный финансовый план:
 
 **Информация о бизнесе:**
@@ -378,8 +501,58 @@ Question: {working_prompt}"""
 
 Будь конкретным, используй числа и примеры, основанные на предоставленной информации.
 """
+
+        user_prompt_en = f"""
+Based on the following business information, create a detailed financial plan:
+
+**Business Information:**
+{business_info.get('business_type', 'Not specified')}
+
+**Current Financial Situation:**
+{business_info.get('financial_situation', 'Not specified')}
+
+**Goals and Objectives:**
+{business_info.get('goals', 'Not specified')}
+
+Create a detailed financial plan with the following sections (use # for headings):
+
+# 1. Current Situation Analysis(do not use a table in this section)
+- Assess the business's strengths and weaknesses
+- Analyze financial condition
+- Identify key opportunities and threats
+
+# 2. Expense Optimization Recommendations(do not use a table in this section)
+- Specific steps to reduce costs
+- Expense prioritization
+- Potential savings
+
+# 3. Revenue Growth Strategies(do not use a table in this section)
+- New revenue sources
+- Pricing optimization
+- Client base expansion
+
+# 4. Action Plan(do not use a table in this section)
+- Specific steps with deadlines
+- Key Performance Indicators (KPI)
+- Resources required for implementation
+
+# 5. Financial Forecast(use 1 table in this section)
+Create a forecast table for 3-6 months in the format:
+| Month | Revenue (rub) | Expenses (rub) | Profit (rub) |
+|-------|---------------|----------------|--------------|
+| 1     | ...           | ...            | ...          |
+
+# 6. Risk Management(do not use a table in this section)
+- Main risks and their probability
+- Risk mitigation strategies
+- Action plan in crisis situations
+
+Be specific, use numbers and examples based on the provided information.
+"""
         
-        return self.generate_response(user_prompt, system_prompt)
+        user_prompt = self._get_prompt(user_prompt_ru, user_prompt_en)
+        # Financial plan needs more tokens to generate complete response
+        return self.generate_response(user_prompt, system_prompt, max_tokens=3500)
     
     def find_clients(self, search_info: dict) -> str:
         """
@@ -775,6 +948,136 @@ USERNAME: @username
         except Exception as e:
             logger.error(f"Error getting AI recommendation: {e}")
             return None
+
+    def find_top_candidates_for_business(self, business_info: dict, candidates: list) -> list:
+        """
+        Find top 3 candidates suitable for a business based on their user_info
+        
+        Args:
+            business_info: Dictionary with business information
+                - business_name: Name of the business
+                - business_type: Type of business
+                - financial_situation: Current financial situation  
+                - goals: Business goals
+            candidates: List of candidate dictionaries
+                - user_id: User ID
+                - username: Username
+                - first_name: First name
+                - user_info: User's personal description
+                - overall_rating: User's rating (can be None)
+        
+        Returns:
+            List of up to 3 most suitable candidates sorted by AI preference
+            Each candidate dict includes original data plus 'reasoning' field from AI
+        """
+        if not candidates:
+            return []
+        
+        # Prepare business info for AI
+        business_desc = f"""
+Информация о бизнесе:
+Название: {business_info.get('business_name', 'Не указано')}
+Тип бизнеса: {business_info.get('business_type', 'Не указано')}
+Финансовая ситуация: {business_info.get('financial_situation', 'Не указано')}
+Цели: {business_info.get('goals', 'Не указано')}
+"""
+        
+        # Prepare candidates info for AI
+        candidates_desc = "Доступные кандидаты:\n\n"
+        for i, candidate in enumerate(candidates, 1):
+            username = candidate.get('username') or f"пользователь_{candidate.get('user_id')}"
+            first_name = candidate.get('first_name', '')
+            rating = candidate.get('overall_rating')
+            rating_str = f"Рейтинг: {rating}" if rating is not None else "Рейтинг: нет опыта"
+            
+            candidates_desc += f"""Кандидат {i}:
+Username: @{username}
+Имя: {first_name}
+{rating_str}
+Описание: {candidate.get('user_info', 'Не указано')}
+
+---
+"""
+        
+        system_prompt = (
+            "Ты опытный HR-менеджер и рекрутер. "
+            "Твоя задача - выбрать до 3 наиболее подходящих кандидатов для бизнеса на основе их описаний.\n\n"
+            "ВАЖНЫЕ ПРАВИЛА:\n"
+            "1. Анализируй соответствие навыков и опыта кандидата требованиям бизнеса\n"
+            "2. Учитывай рейтинг кандидата (выше = лучше), но не делай его единственным критерием\n"
+            "3. Отдавай предпочтение кандидатам с релевантным опытом\n"
+            "4. Верни от 1 до 3 наиболее подходящих кандидатов\n"
+            "5. Формат ответа СТРОГО (для каждого кандидата):\n\n"
+            "КАНДИДАТ: @username\n"
+            "ПРИЧИНА: [краткое объяснение почему этот кандидат подходит]\n\n"
+            "6. НЕ добавляй никаких дополнительных комментариев или вступлений\n"
+            "7. Если ни один кандидат не подходит, верни: 'ПОДХОДЯЩИХ КАНДИДАТОВ НЕТ'\n"
+            "8. Отвечай ТОЛЬКО на русском языке"
+        )
+        
+        user_prompt = f"""
+{business_desc}
+
+{candidates_desc}
+
+Выбери до 3 наиболее подходящих кандидатов для этого бизнеса.
+Сортируй по релевантности (самый подходящий первым).
+"""
+        
+        try:
+            response = self.generate_response(user_prompt, system_prompt)
+            
+            # Parse response
+            if 'ПОДХОДЯЩИХ КАНДИДАТОВ НЕТ' in response.upper():
+                return []
+            
+            selected = []
+            lines = response.strip().split('\n')
+            current_username = None
+            current_reasoning = None
+            
+            for line in lines:
+                line = line.strip()
+                if line.startswith('КАНДИДАТ:'):
+                    # Save previous candidate if exists
+                    if current_username:
+                        # Find candidate by username
+                        for candidate in candidates:
+                            cand_username = candidate.get('username') or f"пользователь_{candidate.get('user_id')}"
+                            if cand_username == current_username:
+                                candidate_copy = candidate.copy()
+                                candidate_copy['reasoning'] = current_reasoning
+                                selected.append(candidate_copy)
+                                break
+                    
+                    # Start new candidate
+                    current_username = line.replace('КАНДИДАТ:', '').strip().lstrip('@')
+                    current_reasoning = None
+                elif line.startswith('ПРИЧИНА:'):
+                    current_reasoning = line.replace('ПРИЧИНА:', '').strip()
+            
+            # Don't forget the last candidate
+            if current_username:
+                for candidate in candidates:
+                    cand_username = candidate.get('username') or f"пользователь_{candidate.get('user_id')}"
+                    if cand_username == current_username:
+                        candidate_copy = candidate.copy()
+                        candidate_copy['reasoning'] = current_reasoning
+                        selected.append(candidate_copy)
+                        break
+            
+            # Limit to 3 candidates
+            return selected[:3]
+            
+        except Exception as e:
+            logger.error(f"Error finding top candidates: {e}")
+            # Fallback: return first 3 candidates sorted by rating
+            sorted_candidates = sorted(
+                candidates,
+                key=lambda c: (c.get('overall_rating') is not None, c.get('overall_rating') or 0),
+                reverse=True
+            )
+            return sorted_candidates[:3]
 
 
 # Global AI client instance
