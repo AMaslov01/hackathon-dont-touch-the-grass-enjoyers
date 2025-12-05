@@ -4,6 +4,7 @@ Telegram bot with AI integration, user accounts, and token system
 from ast import parse
 import os
 import logging
+from logging.handlers import TimedRotatingFileHandler
 import re
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -4100,6 +4101,24 @@ async def setup_bot_commands(application):
     await application.bot.set_my_commands(commands)
     logger.info("Bot commands registered successfully")
 
+def quick_log_setup():
+    # Create handler that rotates every hour
+    handler = TimedRotatingFileHandler(
+        'telegram_bot.log',
+        when='H',
+        interval=1,
+        backupCount=48,
+        encoding='utf-8'
+    )
+    
+    # Setup logging format
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[handler, logging.StreamHandler()]
+    )
+    
+    logging.info("Logging system initialized - Hourly rotation active")
 
 def main() -> None:
     """Start the bot"""
@@ -4122,7 +4141,7 @@ def main() -> None:
             write_timeout=30.0,         # 30 seconds to send request
             pool_timeout=10.0           # 10 seconds to get connection from pool
         )
-
+        quick_log_setup()
         # Create the Application with custom request handler
         application = (
             Application.builder()

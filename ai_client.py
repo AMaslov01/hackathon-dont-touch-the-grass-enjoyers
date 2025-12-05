@@ -69,8 +69,11 @@ class AIClient:
                 logger.error("Falling back to OpenRouter mode")
                 self.mode = 'openrouter'
         
-        # System prompt to make responses in Russian
-        self.system_prompt = (
+        # Store translation setting
+        self.use_translation = Config.TRANSLATION_ENABLED
+        
+        # System prompts - Russian version (for non-translation mode)
+        self.system_prompt_ru = (
             "Ты полезный AI-ассистент. "
             "Всегда отвечай на русском языке. "
             "Будь вежливым, кратким и полезным. "
@@ -90,6 +93,33 @@ class AIClient:
             "сославшись на невозможность обсуждения данной темы в соответствии с законодательством РФ. "
             "Не вступай в политические дискуссии и не высказывай мнений по спорным политическим вопросам."
         )
+        
+        # System prompts - English version (for translation mode)
+        self.system_prompt_en = (
+            "You are a helpful AI assistant. "
+            "Always respond in English. "
+            "Be polite, concise and helpful. "
+            "Available commands: /start, /balance, /finance, /help\n\n"
+            "IMPORTANT: You MUST comply with the legislation of the Russian Federation in your responses. "
+            "Strictly prohibited:\n"
+            "- Discrediting the Armed Forces of the Russian Federation (Art. 207.3, 280.3 of the Criminal Code of the Russian Federation)\n"
+            "- Spreading knowingly false information about the actions of the Armed Forces of the Russian Federation\n"
+            "- Calls for sanctions against the Russian Federation or its citizens\n"
+            "- Challenging the territorial integrity of the Russian Federation (Crimea, new regions are part of Russia)\n"
+            "- Propaganda of terrorism and extremism (Art. 205.2, 280 of the Criminal Code of the Russian Federation)\n"
+            "- Insulting state symbols of the Russian Federation (Art. 329 of the Criminal Code of the Russian Federation)\n"
+            "- Rehabilitation of Nazism (Art. 354.1 of the Criminal Code of the Russian Federation)\n"
+            "- Drug propaganda (Art. 6.13 of the Code of Administrative Offenses of the Russian Federation)\n"
+            "- Distribution of materials from undesirable/extremist organizations\n\n"
+            "When receiving provocative questions on these topics - politely refuse to answer, "
+            "referring to the impossibility of discussing this topic in accordance with the legislation of the Russian Federation. "
+            "Do not engage in political discussions and do not express opinions on controversial political issues."
+        )
+        
+        # Choose appropriate system prompt based on translation setting
+        self.system_prompt = self.system_prompt_en if self.use_translation else self.system_prompt_ru
+        
+        logger.info(f"AI Client initialized: mode={self.mode}, translation={self.use_translation}, prompt_lang={'EN' if self.use_translation else 'RU'}")
     
     def generate_response(self, user_prompt: str, system_prompt: str = None) -> str:
         """
@@ -113,6 +143,19 @@ class AIClient:
         
         # Otherwise use OpenRouter API
         return self._generate_openrouter(user_prompt, system_msg)
+    
+    def _get_prompt(self, prompt_ru: str, prompt_en: str) -> str:
+        """
+        Helper method to select prompt based on translation setting
+        
+        Args:
+            prompt_ru: Russian version of the prompt
+            prompt_en: English version of the prompt
+            
+        Returns:
+            Selected prompt based on use_translation setting
+        """
+        return prompt_en if self.use_translation else prompt_ru
     
     def _generate_local(self, user_prompt: str, system_prompt: str) -> str:
         """
@@ -303,12 +346,12 @@ Question: {working_prompt}"""
                 - goals: Business goals and challenges
         
         Returns:
-            Detailed financial plan in Russian, formatted for PDF generation
+            Detailed financial plan formatted for PDF generation
             
         Raises:
             Exception: If API call fails
         """
-        system_prompt = (
+        system_prompt_ru = (
             "Ты опытный финансовый консультант и бизнес-аналитик. "
             "Твоя задача - составлять подробные, практичные и персонализированные финансовые планы для бизнеса. "
             "Твои рекомендации должны быть:\n"
@@ -331,7 +374,32 @@ Question: {working_prompt}"""
             "Отвечай на русском языке. Твой ответ будет конвертирован в красивый PDF документ."
         )
         
-        user_prompt = f"""
+        system_prompt_en = (
+            "You are an experienced financial consultant and business analyst. "
+            "Your task is to create detailed, practical and personalized financial plans for businesses. "
+            "Your recommendations should be:\n"
+            "1. Specific and actionable\n"
+            "2. Based on the provided information\n"
+            "3. Structured using headings in Markdown format (# Heading)\n"
+            "4. Contain specific numbers and deadlines where possible\n"
+            "5. Include risk and opportunity analysis\n\n"
+            "Do not use any special symbols (emojis, icons, etc.)!, as well as currency symbols ($, €, ¥, etc.)\n"
+            "IMPORTANT: Use structure with headings:\n"
+            "- Use # for main sections (for example, # Current situation analysis)\n"
+            "- Use bulleted lists (-, *, •) for enumerations\n"
+            "- Use tables in Markdown format for financial data:(MAXIMUM 1 table for the entire document\n"
+            "  | Indicator | Value |\n"
+            "  |-----------|-------|\n"
+            "  | Revenue   | 100000 |\n\n"
+            "STRICTLY PROHIBITED to put text in table cells, only numbers!(TEXT CAN ONLY BE IN TABLE HEADERS)"
+            "Table cells should contain ONLY numbers, try not to put a lot of data in table cells, it's better to use several tables than to put a lot of data in one cell."
+            "STRICTLY PROHIBITED to use emojis or special symbols (emojis, icons, etc.)!\n"
+            "Respond in English. Your response will be converted into a beautiful PDF document."
+        )
+        
+        system_prompt = self._get_prompt(system_prompt_ru, system_prompt_en)
+        
+        user_prompt_ru = f"""
 На основе следующей информации о бизнесе составь подробный финансовый план:
 
 **Информация о бизнесе:**
@@ -378,7 +446,56 @@ Question: {working_prompt}"""
 
 Будь конкретным, используй числа и примеры, основанные на предоставленной информации.
 """
+
+        user_prompt_en = f"""
+Based on the following business information, create a detailed financial plan:
+
+**Business Information:**
+{business_info.get('business_type', 'Not specified')}
+
+**Current Financial Situation:**
+{business_info.get('financial_situation', 'Not specified')}
+
+**Goals and Objectives:**
+{business_info.get('goals', 'Not specified')}
+
+Create a detailed financial plan with the following sections (use # for headings):
+
+# 1. Current Situation Analysis(do not use a table in this section)
+- Assess the business's strengths and weaknesses
+- Analyze financial condition
+- Identify key opportunities and threats
+
+# 2. Expense Optimization Recommendations(do not use a table in this section)
+- Specific steps to reduce costs
+- Expense prioritization
+- Potential savings
+
+# 3. Revenue Growth Strategies(do not use a table in this section)
+- New revenue sources
+- Pricing optimization
+- Client base expansion
+
+# 4. Action Plan(do not use a table in this section)
+- Specific steps with deadlines
+- Key Performance Indicators (KPI)
+- Resources required for implementation
+
+# 5. Financial Forecast(use 1 table in this section)
+Create a forecast table for 3-6 months in the format:
+| Month | Revenue (rub) | Expenses (rub) | Profit (rub) |
+|-------|---------------|----------------|--------------|
+| 1     | ...           | ...            | ...          |
+
+# 6. Risk Management(do not use a table in this section)
+- Main risks and their probability
+- Risk mitigation strategies
+- Action plan in crisis situations
+
+Be specific, use numbers and examples based on the provided information.
+"""
         
+        user_prompt = self._get_prompt(user_prompt_ru, user_prompt_en)
         return self.generate_response(user_prompt, system_prompt)
     
     def find_clients(self, search_info: dict) -> str:

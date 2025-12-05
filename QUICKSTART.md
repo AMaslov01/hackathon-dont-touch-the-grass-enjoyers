@@ -20,9 +20,11 @@ nano config.env  # Проверить TELEGRAM_BOT_TOKEN и настройки �
 
 ### 4. Создать базу данных
 ```bash
-sudo -u postgres psql -c "CREATE DATABASE bot_db;"
-sudo -u postgres psql -d bot_db -f schema.sql
+sudo -u postgres psql -c "CREATE DATABASE telegram_bot;"
+sudo -u postgres psql -d telegram_bot < schema.sql
 ```
+
+> **Примечание:** Используется `< schema.sql` вместо `-f schema.sql`, чтобы избежать ошибки "Permission denied". При использовании `<`, перенаправление ввода выполняет текущий пользователь (у которого есть права на чтение файла), а содержимое передается в psql через stdin.
 
 ### 5. Загрузить тестовые данные в RAG
 ```bash
@@ -31,7 +33,7 @@ sudo -u postgres psql -d bot_db -f schema.sql
 
 ### 6. Запустить бота
 ```bash
-python bot.py
+python3 bot.py
 ```
 
 **При первом запуске с AI_MODE=local:**
@@ -62,15 +64,15 @@ pip install -r requirements.txt
 nano config.env  # Убедиться что TELEGRAM_BOT_TOKEN и БД настроены
 
 # Создать БД
-sudo -u postgres psql -c "CREATE DATABASE bot_db;"
-sudo -u postgres psql -d bot_db -f schema.sql
+sudo -u postgres psql -c "CREATE DATABASE telegram_bot;"
+sudo -u postgres psql -d telegram_bot < schema.sql
 
 # Загрузить данные в RAG
 chmod +x load_documents.sh
 ./load_documents.sh test_documents
 
 # Запустить (модель скачается автоматически при первом запуске)
-python bot.py
+python3 bot.py
 ```
 
 ### Способ 2: SCP (копирование файлов)
@@ -272,17 +274,74 @@ python rag_tools/manage_rag.py --stats
 ### БД не подключается
 ```bash
 sudo systemctl status postgresql
-psql -U postgres -d bot_db -c "SELECT 1;"
+psql -U postgres -d telegram_bot -c "SELECT 1;"
+```
+
+### Ошибка "Permission denied" при создании БД из schema.sql
+
+Если видите ошибку:
+```
+psql: error: schema.sql: Permission denied
+```
+
+**Причина:** Пользователь `postgres` не имеет прав на чтение файлов в вашей домашней директории.
+
+**Решение - используйте `<` вместо `-f`:**
+```bash
+# ❌ НЕ работает на сервере
+sudo -u postgres psql -d telegram_bot -f schema.sql
+
+# ✅ ПРАВИЛЬНО - работает везде
+sudo -u postgres psql -d telegram_bot < schema.sql
+```
+
+**Альтернативные решения:**
+```bash
+# Способ 2: через cat
+cat schema.sql | sudo -u postgres psql -d telegram_bot
+
+# Способ 3: через /tmp
+cp schema.sql /tmp/schema.sql
+chmod 644 /tmp/schema.sql
+sudo -u postgres psql -d telegram_bot -f /tmp/schema.sql
+rm /tmp/schema.sql
+```
+
+### Пересоздать базу данных (удалить все данные и создать чистую БД)
+
+**Автоматически (рекомендуется):**
+```bash
+chmod +x reset_database.sh
+./reset_database.sh
+```
+
+**Вручную:**
+```bash
+# Простой способ (если нет активных подключений)
+sudo -u postgres psql -c "DROP DATABASE IF EXISTS telegram_bot;" && \
+sudo -u postgres psql -c "CREATE DATABASE telegram_bot;" && \
+sudo -u postgres psql -d telegram_bot < schema.sql
+
+# Если есть активные подключения (бот запущен)
+sudo -u postgres psql << EOF
+SELECT pg_terminate_backend(pg_stat_activity.pid)
+FROM pg_stat_activity
+WHERE pg_stat_activity.datname = 'telegram_bot'
+  AND pid <> pg_backend_pid();
+DROP DATABASE IF EXISTS telegram_bot;
+CREATE DATABASE telegram_bot;
+EOF
+sudo -u postgres psql -d telegram_bot < schema.sql
 ```
 
 ### Бот не запускается
 ```bash
 # Проверить конфиг
 source venv/bin/activate
-python -c "from config import Config; Config.validate()"
+python3 -c "from config import Config; Config.validate()"
 
 # Посмотреть логи
-python bot.py
+python3 bot.py
 ```
 
 ---
