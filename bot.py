@@ -124,9 +124,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         # Check if user has filled their info
         if not user_manager.has_user_info(user_id):
             await update.message.reply_text(
-                "👋 *Добро пожаловать!*\n\n"
+                "*Добро пожаловать!* 👋\n\n"
                 "Перед началом работы, пожалуйста, расскажите немного о себе.\n\n"
-                "📝 Укажите:\n"
+                "*Укажите:* 📝\n"
                 "• Ваши навыки и опыт\n"
                 "• Сферы, в которых вы работаете\n"
                 "• Что вы умеете делать\n"
@@ -168,7 +168,7 @@ async def user_info_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
         if success:
             await update.message.reply_text(
-                "✅ Отлично! Ваша информация сохранена.\n\n"
+                "Отлично! Ваша информация сохранена. ✅\n\n"
                 "Теперь вы можете пользоваться всеми функциями бота!",
                 parse_mode='Markdown'
             )
@@ -189,7 +189,7 @@ async def user_info_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             return ConversationHandler.END
         else:
             await update.message.reply_text(
-                "❌ Не удалось сохранить информацию. Попробуйте еще раз.",
+                "Не удалось сохранить информацию. Попробуйте еще раз. ❌",
                 parse_mode='Markdown'
             )
             return USER_INFO_INPUT
@@ -270,7 +270,7 @@ async def roulette_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                     tokens=result['tokens']
                 )
             else:
-                response_text = f"❌ {message}"
+                response_text = f"{message} ❌"
             
             await update.message.reply_text(response_text, parse_mode='Markdown')
             logger.info(f"User {user_id} tried to spin roulette but it's not available")
@@ -320,7 +320,7 @@ async def check_user_info_filled(update: Update, context: ContextTypes.DEFAULT_T
     # Check if user has filled their info
     if not user_manager.has_user_info(user_id):
         await update.message.reply_text(
-            "⚠️ *Доступ ограничен*\n\n"
+            "*Доступ ограничен* ⚠️\n\n"
             "Для использования бота необходимо заполнить информацию о себе.\n\n"
             "Пожалуйста, используйте команду /start для начала работы.",
             parse_mode='Markdown'
@@ -440,7 +440,7 @@ async def finance_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
         if not active_business:
             await update.message.reply_text(
-                "❌ У вас нет активного бизнеса.\n\n"
+                "У вас нет активного бизнеса. ❌\n\n"
                 "Создайте бизнес с помощью /create_business",
                 parse_mode='Markdown'
             )
@@ -449,7 +449,7 @@ async def finance_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         # User has active business, offer to update it or generate plan
         business_name = escape_markdown(active_business['business_name'])
         await update.message.reply_text(
-            f"📊 Вы работаете с бизнесом: *{business_name}*\n\n"
+            f"Вы работаете с бизнесом: *{business_name}* 📊\n\n"
             f"Хотите обновить информацию о бизнесе или сгенерировать финансовый план?\n\n"
             f"Ответьте *'да'* для обновления информации\n"
             f"Ответьте *'нет'* для генерации плана с текущими данными",
@@ -552,7 +552,7 @@ async def finance_question_4(update: Update, context: ContextTypes.DEFAULT_TYPE)
     try:
         # Show validation message
         validation_msg = await update.message.reply_text(
-            "🔍 Проверяем информацию о бизнесе на соответствие законодательству РФ..."
+            "Проверяем информацию о бизнесе на соответствие законодательству РФ... 🔍"
         )
         
         # Prepare business info for validation
@@ -591,7 +591,7 @@ async def finance_question_4(update: Update, context: ContextTypes.DEFAULT_TYPE)
         except:
             pass
         await update.message.reply_text(
-            "❌ Произошла ошибка при проверке информации о бизнесе. "
+            "Произошла ошибка при проверке информации о бизнесе. ❌\n"
             "Пожалуйста, попробуйте позже или обратитесь в поддержку.",
             parse_mode='Markdown'
         )
@@ -832,7 +832,7 @@ async def create_business_start(update: Update, context: ContextTypes.DEFAULT_TY
 
         # Start the questionnaire
         await update.message.reply_text(
-            "🏢 *Создание нового бизнеса*\n\n"
+            "*Создание нового бизнеса* 🏢\n\n"
             "Я помогу вам создать новый бизнес. "
             "Пожалуйста, ответьте на несколько вопросов.\n\n"
             "Вы можете отменить процесс в любой момент командой /cancel",
@@ -890,7 +890,7 @@ async def create_business_q4(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Validate business legality before saving
     try:
         validation_msg = await update.message.reply_text(
-            "🔍 Проверяем информацию о бизнесе на соответствие законодательству РФ..."
+            "Проверяем информацию о бизнесе на соответствие законодательству РФ... 🔍"
         )
 
         business_info = {
@@ -925,7 +925,7 @@ async def create_business_q4(update: Update, context: ContextTypes.DEFAULT_TYPE)
         except:
             pass
         await update.message.reply_text(
-            "❌ Произошла ошибка при проверке информации о бизнесе. "
+            "Произошла ошибка при проверке информации о бизнесе. ❌\n"
             "Пожалуйста, попробуйте позже.",
             parse_mode='Markdown'
         )
@@ -991,7 +991,7 @@ async def switch_businesses_start(update: Update, context: ContextTypes.DEFAULT_
 
         if not businesses:
             await update.message.reply_text(
-                "❌ У вас нет бизнесов.\n\n"
+                "У вас нет бизнесов. ❌\n\n"
                 "Создайте бизнес с помощью /create_business",
                 parse_mode='HTML'
             )
@@ -1050,7 +1050,7 @@ async def switch_businesses_id_handler(update: Update, context: ContextTypes.DEF
 
     except ValueError:
         await update.message.reply_text(
-            "❌ Неверный формат ID. Пожалуйста, введите число.",
+            "Неверный формат ID. Пожалуйста, введите число. ❌",
             parse_mode='Markdown'
         )
         return SWITCH_BUSINESS_ID
@@ -1087,7 +1087,7 @@ async def delete_business_start(update: Update, context: ContextTypes.DEFAULT_TY
 
         if not businesses:
             await update.message.reply_text(
-                "❌ У вас нет бизнесов для удаления.",
+                "У вас нет бизнесов для удаления. ❌",
                 parse_mode='Markdown'
             )
             return ConversationHandler.END
@@ -1130,7 +1130,7 @@ async def delete_business_id_handler(update: Update, context: ContextTypes.DEFAU
 
         if not business:
             await update.message.reply_text(
-                "❌ Бизнес с таким ID не найден или не принадлежит вам.",
+                "Бизнес с таким ID не найден или не принадлежит вам. ❌",
                 parse_mode='Markdown'
             )
             return ConversationHandler.END
@@ -1147,7 +1147,7 @@ async def delete_business_id_handler(update: Update, context: ContextTypes.DEFAU
 
     except ValueError:
         await update.message.reply_text(
-            "❌ Неверный формат ID. Пожалуйста, введите число.",
+            "Неверный формат ID. Пожалуйста, введите число. ❌",
             parse_mode='Markdown'
         )
         return DELETE_BUSINESS_ID
@@ -1164,7 +1164,7 @@ async def delete_business_confirm_handler(update: Update, context: ContextTypes.
 
     if user_response not in ['да', 'yes', 'y', '+']:
         await update.message.reply_text(
-            "❌ Удаление бизнеса отменено.",
+            "Удаление бизнеса отменено. ❌",
             parse_mode='Markdown'
         )
         context.user_data.clear()
@@ -1223,7 +1223,7 @@ async def clients_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         # Check if user has active business
         if not user_manager.has_active_business(user_id):
             await update.message.reply_text(
-                "❌ У вас нет активного бизнеса.\n\n"
+                "У вас нет активного бизнеса. ❌\n\n"
                 "Создайте бизнес с помощью /create_business",
                 parse_mode='Markdown'
             )
@@ -1415,7 +1415,7 @@ async def executors_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         # Check if user has active business
         if not user_manager.has_active_business(user_id):
             await update.message.reply_text(
-                "❌ У вас нет активного бизнеса.\n\n"
+                "У вас нет активного бизнеса. ❌\n\n"
                 "Создайте бизнес с помощью /create_business",
                 parse_mode='Markdown'
             )
@@ -2009,7 +2009,7 @@ async def accept_invitation_id_handler(update: Update, context: ContextTypes.DEF
         return await accept_invitation_process(update, context)
     except ValueError:
         await update.message.reply_text(
-            "❌ Неверный формат ID. Пожалуйста, введите число.",
+            "Неверный формат ID. Пожалуйста, введите число. ❌",
             parse_mode='Markdown'
         )
         return ACCEPT_INVITATION_ID
@@ -2097,7 +2097,7 @@ async def reject_invitation_id_handler(update: Update, context: ContextTypes.DEF
         return await reject_invitation_process(update, context)
     except ValueError:
         await update.message.reply_text(
-            "❌ Неверный формат ID. Пожалуйста, введите число.",
+            "Неверный формат ID. Пожалуйста, введите число. ❌",
             parse_mode='Markdown'
         )
         return REJECT_INVITATION_ID
@@ -2218,7 +2218,7 @@ async def create_task_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Check if user has active business
         if not user_manager.has_active_business(user_id):
             await update.message.reply_text(
-                "❌ У вас нет активного бизнеса.\n\n"
+                "У вас нет активного бизнеса. ❌\n\n"
                 "Создайте бизнес с помощью /create_business",
                 parse_mode='Markdown'
             )
@@ -2280,7 +2280,7 @@ async def task_deadline_handler(update: Update, context: ContextTypes.DEFAULT_TY
         deadline_hours = int(text)
         if deadline_hours <= 0:
             await update.message.reply_text(
-                "❌ Дедлайн должен быть положительным числом. Попробуйте еще раз:",
+                "Дедлайн должен быть положительным числом. Попробуйте еще раз: ❌",
                 parse_mode='Markdown'
             )
             return TASK_DEADLINE
@@ -2300,7 +2300,7 @@ async def task_deadline_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
     except ValueError:
         await update.message.reply_text(
-            "❌ Неверный формат. Укажите число (дедлайн в часах):",
+            "Неверный формат. Укажите число (дедлайн в часах): ❌",
             parse_mode='Markdown'
         )
         return TASK_DEADLINE
@@ -2314,7 +2314,7 @@ async def task_difficulty_handler(update: Update, context: ContextTypes.DEFAULT_
         difficulty = int(text)
         if not (1 <= difficulty <= 5):
             await update.message.reply_text(
-                "❌ Сложность должна быть от 1 до 5. Попробуйте еще раз:",
+                "Сложность должна быть от 1 до 5. Попробуйте еще раз: ❌",
                 parse_mode='Markdown'
             )
             return TASK_DIFFICULTY
@@ -2331,7 +2331,7 @@ async def task_difficulty_handler(update: Update, context: ContextTypes.DEFAULT_
 
     except ValueError:
         await update.message.reply_text(
-            "❌ Неверный формат. Укажите число от 1 до 5:",
+            "Неверный формат. Укажите число от 1 до 5: ❌",
             parse_mode='Markdown'
         )
         return TASK_DIFFICULTY
@@ -2344,7 +2344,7 @@ async def task_priority_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
     if text not in ['низкий', 'средний', 'высокий']:
         await update.message.reply_text(
-            "❌ Неверный приоритет. Укажите: низкий, средний или высокий:",
+            "Неверный приоритет. Укажите: низкий, средний или высокий: ❌",
             parse_mode='Markdown'
         )
         return TASK_PRIORITY
@@ -2596,7 +2596,7 @@ async def take_task_id_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         return await take_task_process(update, context)
     except ValueError:
         await update.message.reply_text(
-            "❌ Неверный формат ID. Пожалуйста, введите число.",
+            "Неверный формат ID. Пожалуйста, введите число. ❌",
             parse_mode='Markdown'
         )
         return TAKE_TASK_ID
@@ -2646,7 +2646,7 @@ async def assign_task_start(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         # Check if user has active business
         if not user_manager.has_active_business(user_id):
             await update.message.reply_text(
-                "❌ У вас нет активного бизнеса.\n\n"
+                "У вас нет активного бизнеса. ❌\n\n"
                 "Создайте бизнес с помощью /create_business",
                 parse_mode='Markdown'
             )
@@ -2679,7 +2679,7 @@ async def assign_task_id_handler(update: Update, context: ContextTypes.DEFAULT_T
         return ASSIGN_TASK_USERNAME
     except ValueError:
         await update.message.reply_text(
-            "❌ Неверный формат ID. Пожалуйста, введите число.",
+            "Неверный формат ID. Пожалуйста, введите число. ❌",
             parse_mode='Markdown'
         )
         return ASSIGN_TASK_ID
@@ -2809,7 +2809,7 @@ async def complete_task_id_handler(update: Update, context: ContextTypes.DEFAULT
         return await complete_task_process(update, context)
     except ValueError:
         await update.message.reply_text(
-            "❌ Неверный формат ID. Пожалуйста, введите число.",
+            "Неверный формат ID. Пожалуйста, введите число. ❌",
             parse_mode='Markdown'
         )
         return COMPLETE_TASK_ID
@@ -2939,7 +2939,7 @@ async def abandon_task_id_handler(update: Update, context: ContextTypes.DEFAULT_
         return await abandon_task_process(update, context)
     except ValueError:
         await update.message.reply_text(
-            "❌ Неверный формат ID. Пожалуйста, введите число.",
+            "Неверный формат ID. Пожалуйста, введите число. ❌",
             parse_mode='Markdown'
         )
         return ABANDON_TASK_ID
@@ -2955,7 +2955,7 @@ async def abandon_task_process(update: Update, context: ContextTypes.DEFAULT_TYP
 
         if success:
             await update.message.reply_text(
-                "✅ Вы отказались от задачи! Задача переведена в статус 'отказана'.",
+                "Вы отказались от задачи! Задача переведена в статус 'отказана'. ✅",
                 parse_mode='Markdown'
             )
         else:
@@ -2987,7 +2987,7 @@ async def all_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         # Check if user has active business
         if not user_manager.has_active_business(user_id):
             await update.message.reply_text(
-                "❌ У вас нет активного бизнеса.\n\n"
+                "У вас нет активного бизнеса. ❌\n\n"
                 "Создайте бизнес с помощью /create_business",
                 parse_mode='Markdown'
             )
@@ -3064,7 +3064,7 @@ async def submitted_tasks_command(update: Update, context: ContextTypes.DEFAULT_
         # Check if user has active business
         if not user_manager.has_active_business(user_id):
             await update.message.reply_text(
-                "❌ У вас нет активного бизнеса.\n\n"
+                "У вас нет активного бизнеса. ❌\n\n"
                 "Создайте бизнес с помощью /create_business",
                 parse_mode='Markdown'
             )
@@ -3120,7 +3120,7 @@ async def review_task_start(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         # Check if user has active business
         if not user_manager.has_active_business(user_id):
             await update.message.reply_text(
-                "❌ У вас нет активного бизнеса.\n\n"
+                "У вас нет активного бизнеса. ❌\n\n"
                 "Создайте бизнес с помощью /create_business",
                 parse_mode='Markdown'
             )
@@ -3169,7 +3169,7 @@ async def review_task_id_handler(update: Update, context: ContextTypes.DEFAULT_T
         
         if not task:
             await update.message.reply_text(
-                "❌ Задача не найдена",
+                "Задача не найдена ❌",
                 parse_mode='Markdown'
             )
             return REVIEW_TASK_ID
@@ -3178,14 +3178,14 @@ async def review_task_id_handler(update: Update, context: ContextTypes.DEFAULT_T
         business = user_manager.get_business(user_id)
         if not business or task['business_id'] != business['id']:
             await update.message.reply_text(
-                "❌ Эта задача не принадлежит вашему бизнесу",
+                "Эта задача не принадлежит вашему бизнесу ❌",
                 parse_mode='Markdown'
             )
             return REVIEW_TASK_ID
         
         if task['status'] != 'submitted':
             await update.message.reply_text(
-                "❌ Задача не отправлена на проверку",
+                "Задача не отправлена на проверку ❌",
                 parse_mode='Markdown'
             )
             return REVIEW_TASK_ID
@@ -3239,7 +3239,7 @@ async def review_task_id_handler(update: Update, context: ContextTypes.DEFAULT_T
         
     except ValueError:
         await update.message.reply_text(
-            "❌ Неверный формат ID. Пожалуйста, введите число.",
+            "Неверный формат ID. Пожалуйста, введите число. ❌",
             parse_mode='Markdown'
         )
         return REVIEW_TASK_ID
@@ -3301,7 +3301,7 @@ async def review_task_decision_handler(update: Update, context: ContextTypes.DEF
             parts = text.split()
             if len(parts) != 2:
                 await update.message.reply_text(
-                    "❌ Неверный формат. Используйте: `доработка [часы]`\nНапример: `доработка 2`",
+                    "Неверный формат. ❌ Используйте: `доработка [часы]`\nНапример: `доработка 2`",
                     parse_mode='Markdown'
                 )
                 return REVIEW_TASK_DECISION
@@ -3343,7 +3343,7 @@ async def review_task_decision_handler(update: Update, context: ContextTypes.DEF
                 return ConversationHandler.END
             except ValueError:
                 await update.message.reply_text(
-                    "❌ Неверный формат дедлайна. Укажите число.",
+                    "Неверный формат дедлайна. Укажите число. ❌",
                     parse_mode='Markdown'
                 )
                 return REVIEW_TASK_DECISION
@@ -3353,7 +3353,7 @@ async def review_task_decision_handler(update: Update, context: ContextTypes.DEF
             quality = float(text.replace(',', '.'))
             if not (0.5 <= quality <= 1.0):
                 await update.message.reply_text(
-                    "❌ Коэффициент качества должен быть от 0.5 до 1.0",
+                    "Коэффициент качества должен быть от 0.5 до 1.0 ❌",
                     parse_mode='Markdown'
                 )
                 return REVIEW_TASK_DECISION
@@ -3393,7 +3393,7 @@ async def review_task_decision_handler(update: Update, context: ContextTypes.DEF
             return ConversationHandler.END
         except ValueError:
             await update.message.reply_text(
-                "❌ Неверный формат. Введите:\n"
+                "Неверный формат. ❌ Введите:\n"
                 "• Коэффициент качества (0.5-1.0)\n"
                 "• `доработка [минуты]`\n"
                 "• `отклонить`",
@@ -3404,7 +3404,7 @@ async def review_task_decision_handler(update: Update, context: ContextTypes.DEF
     except Exception as e:
         logger.error(f"Error in review_task_decision_handler for user {user_id}: {e}", exc_info=True)
         await update.message.reply_text(
-            "❌ Произошла ошибка при обработке. Попробуйте снова с команды /review_task",
+            "Произошла ошибка при обработке. ❌ Попробуйте снова с команды /review_task",
             parse_mode='Markdown'
         )
         context.user_data.clear()
@@ -3529,7 +3529,7 @@ async def export_history_command(update: Update, context: ContextTypes.DEFAULT_T
     except Exception as e:
         logger.error(f"Error in export_history command for user {user_id}: {e}", exc_info=True)
         await update.message.reply_text(
-            "❌ Произошла ошибка при экспорте истории. Попробуйте позже."
+            "Произошла ошибка при экспорте истории. Попробуйте позже. ❌"
         )
 
 
@@ -3554,7 +3554,7 @@ async def find_similar_command(update: Update, context: ContextTypes.DEFAULT_TYP
         # Check if user has active business
         if not user_manager.has_active_business(user_id):
             await update.message.reply_text(
-                "❌ У вас нет активного бизнеса.\n\n"
+                "У вас нет активного бизнеса. ❌\n\n"
                 "Создайте бизнес с помощью /create_business",
                 parse_mode='Markdown'
             )
@@ -3742,7 +3742,7 @@ async def show_next_candidate(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Check if we've shown all candidates
     if current_index >= len(candidates):
         await update.effective_message.reply_text(
-            "✅ Вы просмотрели всех доступных кандидатов!",
+            "Вы просмотрели всех доступных кандидатов! ✅",
             parse_mode='Markdown'
         )
         context.user_data.clear()
