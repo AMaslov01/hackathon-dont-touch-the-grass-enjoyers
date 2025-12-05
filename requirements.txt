@@ -37,8 +37,13 @@ sacremoses>=0.0.53  # Required for some translation models
 # Document loaders (for RAG via LangChain)
 pypdf>=3.0.0
 python-docx>=1.0.0
-openpyxl>=3.1.0  # For Excel files
+openpyxl>=3.1.0  # For Excel files (.xlsx)
+xlrd>=2.0.0  # For old Excel files (.xls)
 unstructured>=0.10.0
+# Additional dependencies for unstructured
+python-magic>=0.4.27  # File type detection
+pillow>=10.0.0  # Image processing
+lxml>=4.9.0  # XML/HTML parsing
 
 # Development tools (optional)
 pyright>=1.1.0
