@@ -1,0 +1,8 @@
+[Unit]
+Description=Notify admin about telegram bot crash
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/tarasov/hackathon-dont-touch-the-grass-enjoyers/notify_bot_crash.sh
+

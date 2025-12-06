@@ -1,0 +1,28 @@
+[Unit]
+Description=Telegram Business Bot
+After=network.target
+# Отправить уведомление при падении
+OnFailure=telegram-bot-crash-notify.service
+
+[Service]
+Type=simple
+User=tarasov
+WorkingDirectory=/home/tarasov/hackathon-dont-touch-the-grass-enjoyers
+Environment="PATH=/home/tarasov/hackathon-dont-touch-the-grass-enjoyers/venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/home/tarasov/hackathon-dont-touch-the-grass-enjoyers/venv/bin/python bot.py
+
+# Автоматический перезапуск при падении
+Restart=always
+RestartSec=10
+
+# Логирование
+StandardOutput=append:/var/log/telegram-bot.log
+StandardError=append:/var/log/telegram-bot-error.log
+
+# Ограничения ресурсов (опционально)
+# MemoryMax=2G
+# CPUQuota=200%
+
+[Install]
+WantedBy=multi-user.target
+
