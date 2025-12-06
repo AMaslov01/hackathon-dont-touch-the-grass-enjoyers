@@ -206,26 +206,26 @@ REVIEW_TASK_ID, REVIEW_TASK_DECISION = range(23, 25)
 FIRE_EMPLOYEE_USERNAME = range(25, 26)
 
 # Swipe employees states
-FIND_EMPLOYEES_VIEWING = range(26, 27)
+FIND_EMPLOYEES_CHOICE, FIND_EMPLOYEES_REQUIREMENTS, FIND_EMPLOYEES_VIEWING = range(26, 29)
 
 # Create business conversation states (similar to finance)
-CREATE_BUSINESS_Q1, CREATE_BUSINESS_Q2, CREATE_BUSINESS_Q3, CREATE_BUSINESS_Q4 = range(27, 31)
+CREATE_BUSINESS_Q1, CREATE_BUSINESS_Q2, CREATE_BUSINESS_Q3, CREATE_BUSINESS_Q4 = range(29, 33)
 
 # Switch businesses conversation states
-SWITCH_BUSINESS_ID = range(31, 32)
+SWITCH_BUSINESS_ID = range(33, 34)
 
 # Delete business conversation states
-DELETE_BUSINESS_ID, DELETE_BUSINESS_CONFIRM = range(32, 34)
+DELETE_BUSINESS_ID, DELETE_BUSINESS_CONFIRM = range(34, 36)
 
 # Switch model conversation states
-SWITCH_MODEL_ID = range(34, 35)
+SWITCH_MODEL_ID = range(36, 37)
 
 # Buy premium conversation states
-BUY_PREMIUM_DAYS, BUY_PREMIUM_CONFIRM = range(35, 37)
+BUY_PREMIUM_DAYS, BUY_PREMIUM_CONFIRM = range(37, 39)
 
 
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handle the /start command"""
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle the /start command - simple welcome"""
     user = update.effective_user
     user_id = user.id
 
@@ -240,21 +240,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             last_name=user.last_name
         )
 
-        # Check if user has filled their info
-        if not user_manager.has_user_info(user_id):
-            await update.message.reply_text(
-                "*Добро пожаловать!* 👋\n\n"
-                "Перед началом работы, пожалуйста, расскажите немного о себе.\n\n"
-                "*Укажите:* 📝\n"
-                "• Ваши навыки и опыт\n"
-                "• Сферы, в которых вы работаете\n"
-                "• Что вы умеете делать\n"
-                "• Чем вы можете быть полезны\n\n"
-                "Это поможет работодателям найти вас!",
-                parse_mode='Markdown'
-            )
-            return USER_INFO_INPUT
-
         # Send welcome message
         welcome_text = MESSAGES['welcome']
         await update.message.reply_text(welcome_text, parse_mode='Markdown')
@@ -266,14 +251,56 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 MESSAGES['account_created'].format(tokens=balance['tokens']),
                 parse_mode='Markdown'
             )
+            
+            # Suggest filling info for job search
+            await update.message.reply_text(
+                "💡 *Подсказка:* Чтобы работодатели могли найти вас, заполните информацию о себе командой /fill\\_info",
+                parse_mode='Markdown'
+            )
 
         logger.info(f"User {user_id} successfully initialized")
-        return ConversationHandler.END
 
     except Exception as e:
         logger.error(f"Error in start command for user {user_id}: {e}")
         await update.message.reply_text(MESSAGES['database_error'])
-        return ConversationHandler.END
+
+
+async def fill_info_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Start filling user info - for job search"""
+    user_id = update.effective_user.id
+
+    logger.info(f"User {user_id} started filling info")
+
+    # Check if user already has info
+    has_info = user_manager.has_user_info(user_id)
+    
+    if has_info:
+        await update.message.reply_text(
+            "*Обновление информации о себе* 📝\n\n"
+            "Вы уже заполняли информацию.\n"
+            "Введите новую информацию, и она заменит предыдущую.\n\n"
+            "*Укажите:*\n"
+            "• Ваши навыки и опыт\n"
+            "• Сферы, в которых вы работаете\n"
+            "• Что вы умеете делать\n"
+            "• Чем вы можете быть полезны",
+            parse_mode='Markdown'
+        )
+    else:
+        await update.message.reply_text(
+            "*Заполнение информации о себе* 📝\n\n"
+            "Расскажите о себе, чтобы работодатели могли найти вас!\n\n"
+            "*Укажите:*\n"
+            "• Ваши навыки и опыт\n"
+            "• Сферы, в которых вы работаете\n"
+            "• Что вы умеете делать\n"
+            "• Чем вы можете быть полезны\n\n"
+            "Например: _\"Опытный Python разработчик. Работаю с Django, Flask, "
+            "Telegram ботами. Могу создать веб-приложение или автоматизировать процессы.\"_",
+            parse_mode='Markdown'
+        )
+    
+    return USER_INFO_INPUT
 
 
 async def user_info_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -288,21 +315,9 @@ async def user_info_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         if success:
             await update.message.reply_text(
                 "Отлично! Ваша информация сохранена. ✅\n\n"
-                "Теперь вы можете пользоваться всеми функциями бота!",
+                "Теперь работодатели смогут найти вас через /find\\_employees",
                 parse_mode='Markdown'
             )
-            
-            # Send welcome message
-            welcome_text = MESSAGES['welcome']
-            await update.message.reply_text(welcome_text, parse_mode='Markdown')
-            
-            # Notify about initial tokens
-            balance = user_manager.get_balance_info(user_id)
-            if balance:
-                await update.message.reply_text(
-                    MESSAGES['account_created'].format(tokens=balance['tokens']),
-                    parse_mode='Markdown'
-                )
             
             logger.info(f"User {user_id} saved their info")
             return ConversationHandler.END
@@ -317,6 +332,12 @@ async def user_info_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         logger.error(f"Error saving user info for user {user_id}: {e}")
         await update.message.reply_text(MESSAGES['database_error'])
         return ConversationHandler.END
+
+
+async def fill_info_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancel filling info"""
+    await update.message.reply_text("Заполнение информации отменено ❌")
+    return ConversationHandler.END
 
 
 async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -3820,7 +3841,7 @@ async def find_similar_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def find_employees_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Start the swipe employees feature"""
+    """Start the swipe employees feature - ask how to search"""
     user_id = update.effective_user.id
 
     try:
@@ -3832,6 +3853,75 @@ async def find_employees_start(update: Update, context: ContextTypes.DEFAULT_TYP
             )
             return ConversationHandler.END
 
+        # Ask user how they want to search
+        await update.message.reply_text(
+            "*Поиск сотрудников* 🔍\n\n"
+            "Как вы хотите искать сотрудников?\n\n"
+            "*1.* Искать на основе *информации о бизнесе* 🏢\n"
+            "   AI подберет кандидатов под ваш бизнес\n\n"
+            "*2.* Указать *требования к сотруднику* 📝\n"
+            "   Вы опишете кого ищете, AI найдет подходящих\n\n"
+            "Введите *'1'* или *'2'*:",
+            parse_mode='Markdown'
+        )
+        return FIND_EMPLOYEES_CHOICE
+
+    except Exception as e:
+        logger.error(f"Error in find_employees_start for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+        return ConversationHandler.END
+
+
+async def find_employees_choice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle user's choice of search method"""
+    user_id = update.effective_user.id
+    choice = update.message.text.strip()
+
+    if choice == '1':
+        # Search by business info
+        return await find_employees_by_business(update, context)
+    elif choice == '2':
+        # Ask for requirements
+        await update.message.reply_text(
+            "*Опишите требования к сотруднику* 📝\n\n"
+            "Укажите:\n"
+            "• Какие навыки нужны\n"
+            "• Какой опыт требуется\n"
+            "• Какие задачи будет выполнять\n"
+            "• Другие важные требования\n\n"
+            "*Например:*\n"
+            "_\"Нужен дизайнер с опытом работы в Figma и Adobe. "
+            "Будет делать баннеры и визуалы для соцсетей. "
+            "Желательно портфолио с работами для маркетплейсов.\"_",
+            parse_mode='Markdown'
+        )
+        return FIND_EMPLOYEES_REQUIREMENTS
+    else:
+        await update.message.reply_text(
+            "Неверный выбор ❌\n\n"
+            "Введите *'1'* для поиска по бизнесу или *'2'* для ввода требований:",
+            parse_mode='Markdown'
+        )
+        return FIND_EMPLOYEES_CHOICE
+
+
+async def find_employees_requirements_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle user's requirements input and search"""
+    user_id = update.effective_user.id
+    requirements = update.message.text
+
+    # Save requirements to context
+    context.user_data['search_requirements'] = requirements
+
+    # Perform search
+    return await find_employees_by_requirements(update, context, requirements)
+
+
+async def find_employees_by_business(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Search employees based on business info"""
+    user_id = update.effective_user.id
+
+    try:
         # Get business info
         business = user_manager.get_business(user_id)
         business_info = {
@@ -3842,9 +3932,9 @@ async def find_employees_start(update: Update, context: ContextTypes.DEFAULT_TYP
         }
 
         # Show searching message
-        thinking_msg = await update.message.reply_text("🔍 Ищу подходящих кандидатов...")
+        thinking_msg = await update.message.reply_text("Ищу подходящих кандидатов на основе вашего бизнеса...")
 
-        # Get available candidates (users without business or job)
+        # Get available candidates
         candidates = user_manager.get_users_without_business_or_job(exclude_user_id=user_id)
 
         if not candidates:
@@ -3854,13 +3944,13 @@ async def find_employees_start(update: Update, context: ContextTypes.DEFAULT_TYP
             )
             return ConversationHandler.END
 
-        # Use AI to find top 3 candidates
-        top_candidates = ai_client.find_top_candidates_for_business(business_info, candidates)
+        # Use AI to find top 3 candidates by business info
+        top_candidates = ai_client.find_top_candidates_for_business(business_info, candidates, search_by='business')
 
         if not top_candidates:
             await thinking_msg.edit_text(
-                "😔 К сожалению, не нашлось подходящих кандидатов для вашего бизнеса.\n\n"
-                "Попробуйте позже!",
+                " К сожалению, не нашлось подходящих кандидатов для вашего бизнеса.\n\n"
+                "Попробуйте указать требования вручную!",
                 parse_mode='Markdown'
             )
             return ConversationHandler.END
@@ -3876,7 +3966,56 @@ async def find_employees_start(update: Update, context: ContextTypes.DEFAULT_TYP
         return await show_next_candidate(update, context)
 
     except Exception as e:
-        logger.error(f"Error in find_employees_start for user {user_id}: {e}")
+        logger.error(f"Error in find_employees_by_business for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+        return ConversationHandler.END
+
+
+async def find_employees_by_requirements(update: Update, context: ContextTypes.DEFAULT_TYPE, requirements: str) -> int:
+    """Search employees based on user requirements"""
+    user_id = update.effective_user.id
+
+    try:
+        # Show searching message
+        thinking_msg = await update.message.reply_text("🔍 Ищу подходящих кандидатов по вашим требованиям...")
+
+        # Get available candidates
+        candidates = user_manager.get_users_without_business_or_job(exclude_user_id=user_id)
+
+        if not candidates:
+            await thinking_msg.edit_text(
+                "😔 К сожалению, сейчас нет доступных кандидатов без места работы.",
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
+
+        # Use AI to find top 3 candidates by requirements
+        top_candidates = ai_client.find_top_candidates_for_business(
+            {'requirements': requirements}, 
+            candidates, 
+            search_by='requirements'
+        )
+
+        if not top_candidates:
+            await thinking_msg.edit_text(
+                "😔 К сожалению, не нашлось кандидатов под ваши требования.\n\n"
+                "Попробуйте изменить критерии поиска!",
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
+
+        # Save candidates to context
+        context.user_data['candidates'] = top_candidates
+        context.user_data['current_index'] = 0
+
+        # Delete thinking message
+        await thinking_msg.delete()
+
+        # Show first candidate
+        return await show_next_candidate(update, context)
+
+    except Exception as e:
+        logger.error(f"Error in find_employees_by_requirements for user {user_id}: {e}")
         await update.message.reply_text(MESSAGES['database_error'])
         return ConversationHandler.END
 
@@ -4636,6 +4775,7 @@ async def setup_bot_commands(application):
     commands = [
         BotCommand("start", "Начать работу с ботом"),
         BotCommand("help", "Справка по командам"),
+        BotCommand("fill_info", "📝 Заполнить информацию о себе (для поиска работы)"),
         BotCommand("balance", "Проверить баланс токенов"),
         BotCommand("roulette", "🎰 Ежедневная рулетка (1-50 токенов)"),
         BotCommand("my_model", "🤖 Моя текущая AI модель"),
@@ -4970,11 +5110,17 @@ def main() -> None:
         find_employees_handler = ConversationHandler(
             entry_points=[CommandHandler("find_employees", find_employees_start)],
             states={
+                FIND_EMPLOYEES_CHOICE: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, find_employees_choice_handler)
+                ],
+                FIND_EMPLOYEES_REQUIREMENTS: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, find_employees_requirements_handler)
+                ],
                 FIND_EMPLOYEES_VIEWING: [
                     CallbackQueryHandler(swipe_callback_handler, pattern="^swipe_(accept|reject)_")
                 ],
             },
-            fallbacks=[CommandHandler("cancel", find_employees_cancel)],  # Track callback queries per message
+            fallbacks=[CommandHandler("cancel", find_employees_cancel)],
         )
         application.add_handler(find_employees_handler)
 
@@ -5003,18 +5149,21 @@ def main() -> None:
             fallbacks=[CommandHandler("cancel", buy_premium_cancel)],
         )
         application.add_handler(buy_premium_handler)
-        # Register start command as conversation handler (for user info collection)
-        start_handler = ConversationHandler(
-            entry_points=[CommandHandler("start", start_command)],
+        # Register start command (simple welcome, no conversation)
+        application.add_handler(CommandHandler("start", start_command))
+        
+        # Register fill_info command (conversation for filling user info)
+        fill_info_handler = ConversationHandler(
+            entry_points=[CommandHandler("fill_info", fill_info_start)],
             states={
                 USER_INFO_INPUT: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, user_info_handler)
                 ],
             },
-            fallbacks=[],
+            fallbacks=[CommandHandler("cancel", fill_info_cancel)],
             allow_reentry=True
         )
-        application.add_handler(start_handler)
+        application.add_handler(fill_info_handler)
 
         # Register other command handlers
         application.add_handler(CommandHandler("balance", balance_command))

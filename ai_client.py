@@ -784,22 +784,26 @@ USERNAME: @username
             logger.error(f"Error getting AI recommendation: {e}")
             return None
 
-    def find_top_candidates_for_business(self, business_info: dict, candidates: list) -> list:
+    def find_top_candidates_for_business(self, business_info: dict, candidates: list, search_by: str = 'business') -> list:
         """
         Find top 3 candidates suitable for a business based on their user_info
         
         Args:
-            business_info: Dictionary with business information
-                - business_name: Name of the business
-                - business_type: Type of business
-                - financial_situation: Current financial situation  
-                - goals: Business goals
+            business_info: Dictionary with business information OR requirements
+                If search_by='business':
+                    - business_name: Name of the business
+                    - business_type: Type of business
+                    - financial_situation: Current financial situation  
+                    - goals: Business goals
+                If search_by='requirements':
+                    - requirements: User's custom requirements description
             candidates: List of candidate dictionaries
                 - user_id: User ID
                 - username: Username
                 - first_name: First name
                 - user_info: User's personal description
                 - overall_rating: User's rating (can be None)
+            search_by: 'business' or 'requirements' - how to search
         
         Returns:
             List of up to 3 most suitable candidates sorted by AI preference
@@ -808,8 +812,15 @@ USERNAME: @username
         if not candidates:
             return []
         
-        # Prepare business info for AI
-        business_desc = f"""
+        # Prepare search criteria for AI
+        if search_by == 'requirements':
+            search_desc = f"""
+Требования к сотруднику:
+{business_info.get('requirements', 'Не указано')}
+"""
+        else:
+            # Default: search by business info
+            search_desc = f"""
 Информация о бизнесе:
 Название: {business_info.get('business_name', 'Не указано')}
 Тип бизнеса: {business_info.get('business_type', 'Не указано')}
@@ -834,11 +845,16 @@ Username: @{username}
 ---
 """
         
+        if search_by == 'requirements':
+            task_description = "Выбери до 3 наиболее подходящих кандидатов под указанные требования.\nСортируй по релевантности (самый подходящий первым)."
+        else:
+            task_description = "Выбери до 3 наиболее подходящих кандидатов для этого бизнеса.\nСортируй по релевантности (самый подходящий первым)."
+        
         system_prompt = (
             "Ты опытный HR-менеджер и рекрутер. "
-            "Твоя задача - выбрать до 3 наиболее подходящих кандидатов для бизнеса на основе их описаний.\n\n"
+            "Твоя задача - выбрать до 3 наиболее подходящих кандидатов на основе их описаний.\n\n"
             "ВАЖНЫЕ ПРАВИЛА:\n"
-            "1. Анализируй соответствие навыков и опыта кандидата требованиям бизнеса\n"
+            "1. Анализируй соответствие навыков и опыта кандидата требованиям\n"
             "2. Учитывай рейтинг кандидата (выше = лучше), но не делай его единственным критерием\n"
             "3. Отдавай предпочтение кандидатам с релевантным опытом\n"
             "4. Верни от 1 до 3 наиболее подходящих кандидатов\n"
@@ -851,12 +867,11 @@ Username: @{username}
         )
         
         user_prompt = f"""
-{business_desc}
+{search_desc}
 
 {candidates_desc}
 
-Выбери до 3 наиболее подходящих кандидатов для этого бизнеса.
-Сортируй по релевантности (самый подходящий первым).
+{task_description}
 """
         
         try:
