@@ -85,13 +85,11 @@ def format_models_list(models: dict, show_price: bool = False) -> str:
     
     result = ""
     for model_id, config in models.items():
-        # Escape model name and description for Markdown safety
-        escaped_name = escape_markdown(config.name)
-        escaped_desc = escape_markdown(config.description)
-        
+        # Model names and descriptions are developer-defined content, not user input
+        # So we don't need to escape them (they already have proper markdown)
         result += f"*ID:* `{model_id}`\n"
-        result += f"*Название:* {escaped_name}\n"
-        result += f"{escaped_desc}\n"
+        result += f"*Название:* {config.name}\n"
+        result += f"{config.description}\n"
         
         if show_price:
             price = TOKEN_CONFIG['premium_price_per_day']
@@ -4072,8 +4070,8 @@ async def switch_model_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
         # Show current model
         current_config = get_model_config(current_model_id)
         if current_config:
-            escaped_current_name = escape_markdown(current_config.name)
-            current_model_text = f"*Ваша текущая модель:* {escaped_current_name}\n\n"
+            # Model names are developer-defined, don't escape them
+            current_model_text = f"*Ваша текущая модель:* {current_config.name}\n\n"
         else:
             current_model_text = ""
 
@@ -4143,14 +4141,12 @@ async def switch_model_id_handler(update: Update, context: ContextTypes.DEFAULT_
             )
             return ConversationHandler.END
 
-        # Escape model name for Markdown
-        escaped_model_name = escape_markdown(config.name)
-        escaped_model_desc = escape_markdown(config.description)
+        # Model names and descriptions are developer-defined, don't escape them
         
         # Check AI_MODE compatibility
         if Config.AI_MODE == 'local' and config.model_type != ModelType.LOCAL:
             await update.message.reply_text(
-                f"Модель *{escaped_model_name}* является облачной ❌\n\n"
+                f"Модель *{config.name}* является облачной ❌\n\n"
                 f"Вы работаете в локальном режиме (AI\\_MODE=local).\n"
                 f"Выберите локальную модель или смените режим в config.env",
                 parse_mode='Markdown'
@@ -4159,7 +4155,7 @@ async def switch_model_id_handler(update: Update, context: ContextTypes.DEFAULT_
 
         if Config.AI_MODE == 'openrouter' and config.model_type != ModelType.OPENROUTER:
             await update.message.reply_text(
-                f"Модель *{escaped_model_name}* является локальной ❌\n\n"
+                f"Модель *{config.name}* является локальной ❌\n\n"
                 f"Вы работаете в облачном режиме (AI\\_MODE=openrouter).\n"
                 f"Выберите облачную модель или смените режим в config.env",
                 parse_mode='Markdown'
@@ -4175,7 +4171,7 @@ async def switch_model_id_handler(update: Update, context: ContextTypes.DEFAULT_
                 price = TOKEN_CONFIG['premium_price_per_day']
                 await update.message.reply_text(
                     f"*Доступ к премиум модели ограничен* ❌\n\n"
-                    f"Модель *{escaped_model_name}* доступна только с премиум подпиской.\n\n"
+                    f"Модель *{config.name}* доступна только с премиум подпиской.\n\n"
                     f"Цена: {price} токенов/день 💰\n\n"
                     f"Купите премиум доступ: /buy\\_premium",
                     parse_mode='Markdown'
@@ -4189,8 +4185,8 @@ async def switch_model_id_handler(update: Update, context: ContextTypes.DEFAULT_
             type_icon = "💻" if config.model_type == ModelType.LOCAL else "☁️"
             await update.message.reply_text(
                 f"*Модель успешно изменена!* ✅\n\n"
-                f"*{escaped_model_name}* {type_icon}\n"
-                f"{escaped_model_desc}\n\n"
+                f"*{config.name}* {type_icon}\n"
+                f"{config.description}\n\n"
                 f"Все последующие запросы будут использовать эту модель.",
                 parse_mode='Markdown'
             )
@@ -4245,15 +4241,13 @@ async def my_model_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         type_text = "Локальная 💻" if config.model_type == ModelType.LOCAL else "Облачная ☁️"
         tier_text = "Премиум ⭐" if config.tier == ModelTier.PREMIUM else "Бесплатная 🆓"
         
-        # Escape model name and description for Markdown
-        escaped_name = escape_markdown(config.name)
-        escaped_desc = escape_markdown(config.description)
+        # Model names and descriptions are developer-defined, don't escape them
 
         message_text = f"*Информация о вашей модели* 🤖\n\n"
-        message_text += f"*Название:* {escaped_name}\n"
+        message_text += f"*Название:* {config.name}\n"
         message_text += f"*Тип:* {type_text}\n"
         message_text += f"*Уровень:* {tier_text}\n\n"
-        message_text += f"{escaped_desc}\n\n"
+        message_text += f"{config.description}\n\n"
 
         # Show premium status
         message_text += "*Премиум статус:* 💎\n"

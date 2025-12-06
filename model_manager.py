@@ -101,11 +101,11 @@ MODELS: Dict[str, ModelConfig] = {
     # БЕСПЛАТНЫЕ OPENROUTER МОДЕЛИ
     # =========================================================================
     "deepseek-chimera": ModelConfig(
-        id="deepseek-v3",
+        id="deepseek-chimera",
         name="DeepSeek V3",
         tier=ModelTier.FREE,
         model_type=ModelType.OPENROUTER,
-        description="⭐ DeepSeek chimera - мощная модель с контекстом 64K токенов.",
+        description="DeepSeek chimera - мощная модель с контекстом 64K токенов.",
         openrouter_id="tngtech/deepseek-r1t2-chimera:free"  # БЕСПЛАТНАЯ на OpenRouter!
     ),
     
@@ -264,10 +264,9 @@ def validate_model_access(model_id: str, user_premium_expires: Optional[datetime
     
     if not can_user_access_model(model_id, user_premium_expires):
         price = TOKEN_CONFIG['premium_price_per_day']
-        # Escape model name for Markdown
-        escaped_name = escape_markdown(config.name)
+        # Model names are developer-defined, don't escape them
         return False, (
-            f"У вас нет доступа к модели *{escaped_name}* ❌\n\n"
+            f"У вас нет доступа к модели *{config.name}* ❌\n\n"
             f"Эта модель доступна только с премиум подпиской.\n"
             f"Цена: {price} токенов/день 💰\n\n"
             f"Используйте /buy\\_premium чтобы купить доступ."
