@@ -70,6 +70,38 @@ def escape_markdown(text: str) -> str:
     return text
 
 
+def fix_emoji_at_start(text: str) -> str:
+    """
+    Fix AI responses that start with emoji - Telegram Markdown parser breaks on them.
+    
+    Telegram's Markdown parser can fail when a message starts with an emoji.
+    This function detects and fixes such cases by adding a space before the emoji.
+    
+    Args:
+        text: The AI response text
+        
+    Returns:
+        Fixed text that won't break Telegram's Markdown parser
+    """
+    if not text:
+        return text
+    
+    # Check if text starts with emoji (emoji are typically > 1 byte per char in UTF-8)
+    first_char = text[0] if text else ''
+    
+    # Simple emoji detection: check if first character is in common emoji ranges
+    # This covers most common emoji without heavy regex
+    if first_char and ord(first_char) > 0x1F000:
+        # Add a space before the emoji to prevent Markdown parser issues
+        return ' ' + text
+    
+    # Check for multi-byte emoji sequences (like flags, skin tones, etc)
+    if len(text) > 1 and ord(first_char) >= 0x200D:  # Zero-width joiner used in compound emoji
+        return ' ' + text
+    
+    return text
+
+
 def format_models_list(models: dict, show_price: bool = False) -> str:
     """
     Format a list of models for display in Telegram message
@@ -420,6 +452,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             user_model = user_manager.get_user_model(user_id)
             
             ai_response = ai_client.generate_response(user_message, model_id=user_model)
+            
+            # Fix emoji at start (breaks Telegram Markdown parser)
+            ai_response = fix_emoji_at_start(ai_response)
 
             # Truncate if too long (Telegram limit is 4096 chars)
             if len(ai_response) > 4000:
@@ -621,8 +656,10 @@ async def finance_question_4(update: Update, context: ContextTypes.DEFAULT_TYPE)
         # Check if business is legal
         if not validation_result['is_valid']:
             logger.warning(f"Business validation failed for user {user_id}")
+            # Fix emoji at start (breaks Telegram Markdown parser)
+            validation_message = fix_emoji_at_start(validation_result['message'])
             await update.message.reply_text(
-                f"❌ {validation_result['message']}",
+                f"❌ {validation_message}",
                 parse_mode='Markdown'
             )
             return ConversationHandler.END
@@ -713,6 +750,9 @@ async def finance_generate_plan(update: Update, context: ContextTypes.DEFAULT_TY
         # Generate financial plan using AI with user's selected model
         user_model = user_manager.get_user_model(user_id)
         financial_plan = ai_client.generate_financial_plan(business_info, model_id=user_model)
+        
+        # Fix emoji at start (breaks Telegram Markdown parser)
+        financial_plan = fix_emoji_at_start(financial_plan)
 
         logger.info(f"AI financial plan generated for user {user_id}, length: {len(financial_plan)}")
 
@@ -956,8 +996,10 @@ async def create_business_q4(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         if not validation_result['is_valid']:
             logger.warning(f"Business validation failed for user {user_id}")
+            # Fix emoji at start (breaks Telegram Markdown parser)
+            validation_message = fix_emoji_at_start(validation_result['message'])
             await update.message.reply_text(
-                f"❌ {validation_result['message']}",
+                f"❌ {validation_message}",
                 parse_mode='Markdown'
             )
             context.user_data.clear()
@@ -1398,6 +1440,9 @@ async def clients_search(update: Update, context: ContextTypes.DEFAULT_TYPE,
         # Search for clients using AI with user's selected model
         user_model = user_manager.get_user_model(user_id)
         search_results = ai_client.find_clients(workers_info, model_id=user_model)
+        
+        # Fix emoji at start (breaks Telegram Markdown parser)
+        search_results = fix_emoji_at_start(search_results)
 
         logger.info(f"Clients search results generated for user {user_id}, length: {len(search_results)}")
 
@@ -1591,6 +1636,9 @@ async def executors_search(update: Update, context: ContextTypes.DEFAULT_TYPE,
         # Search for executors using AI with user's selected model
         user_model = user_manager.get_user_model(user_id)
         search_results = ai_client.find_executors(executors_info, model_id=user_model)
+        
+        # Fix emoji at start (breaks Telegram Markdown parser)
+        search_results = fix_emoji_at_start(search_results)
 
         logger.info(f"Executors search results generated for user {user_id}, length: {len(search_results)}")
 
@@ -3686,6 +3734,9 @@ async def find_similar_command(update: Update, context: ContextTypes.DEFAULT_TYP
             # Find similar users using AI with user's selected model
             user_model = user_manager.get_user_model(user_id)
             search_results = ai_client.find_similar_users(current_user_info, parsed_users, model_id=user_model)
+            
+            # Fix emoji at start (breaks Telegram Markdown parser)
+            search_results = fix_emoji_at_start(search_results)
 
             logger.info(f"Similar users results generated for user {user_id}, length: {len(search_results)}")
 
@@ -3809,6 +3860,9 @@ async def show_next_candidate(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # Format rating
     rating_text = f"⭐ Рейтинг: {rating}" if rating is not None else "⭐ Рейтинг: нет опыта"
+
+    # Fix emoji at start for AI-generated reasoning (breaks Telegram Markdown parser)
+    reasoning = fix_emoji_at_start(reasoning)
 
     # Escape markdown in user input
     escaped_username = escape_markdown(f"@{username}")
