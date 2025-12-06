@@ -4074,8 +4074,9 @@ async def switch_model_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
             message_text += f"*У вас есть премиум доступ!* 💎\n"
             message_text += f"Истекает через: {days} дн. {hours} ч. ⏰\n\n"
         else:
+            premium_price = TOKEN_CONFIG['premium_price_per_day']
             message_text += "*Для доступа к премиум моделям:* 💡\n"
-            message_text += "Купите премиум доступ: /buy_premium (300 токенов/день)\n\n"
+            message_text += f"Купите премиум доступ: /buy_premium ({premium_price} токенов/день)\n\n"
 
         message_text += "*Укажите ID модели для переключения:* 📝"
 
@@ -4218,8 +4219,9 @@ async def my_model_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             message_text += f"⏰ Истекает: {premium_expires.strftime('%Y-%m-%d %H:%M')}\n"
             message_text += f"⏳ Осталось: {days} дн. {hours} ч.\n"
         else:
+            premium_price = TOKEN_CONFIG['premium_price_per_day']
             message_text += f"❌ Нет активной подписки\n"
-            message_text += f"Купите доступ: /buy_premium (300 токенов/день)\n"
+            message_text += f"Купите доступ: /buy_premium ({premium_price} токенов/день)\n"
 
         message_text += f"\n_Сменить модель: /switch_model_"
 
@@ -4494,7 +4496,7 @@ async def setup_bot_commands(application):
         BotCommand("roulette", "🎰 Ежедневная рулетка (1-50 токенов)"),
         BotCommand("my_model", "🤖 Моя текущая AI модель"),
         BotCommand("switch_model", "🔄 Переключить AI модель"),
-        BotCommand("buy_premium", "💎 Купить премиум доступ (300 токенов/день)"),
+        BotCommand("buy_premium", f"💎 Купить премиум доступ ({TOKEN_CONFIG['premium_price_per_day']} токенов/день)"),
         BotCommand("finance", "Зарегистрировать бизнес и получить финплан"),
         BotCommand("clients", "Найти клиентов"),
         BotCommand("executors", "Найти исполнителей"),

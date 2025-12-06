@@ -1018,7 +1018,7 @@ class UserManager:
                 new_expires = now + timedelta(days=days)
 
             # Deduct tokens and set premium
-            success = user_repo.purchase_premium(user_id, total_cost, new_expires)
+            success = user_repo.purchase_premium(user_id, total_cost, new_expires, days_purchased=days)
 
             if success:
                 return True, f"Премиум доступ активирован на {days} дн."

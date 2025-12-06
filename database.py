@@ -979,7 +979,7 @@ class UserRepository:
         finally:
             self.db.return_connection(conn)
     
-    def purchase_premium(self, user_id: int, tokens_cost: int, expires_at: datetime) -> bool:
+    def purchase_premium(self, user_id: int, tokens_cost: int, expires_at: datetime, days_purchased: int = 1) -> bool:
         """Purchase premium access"""
         conn = self.db.get_connection()
         try:
@@ -988,9 +988,9 @@ class UserRepository:
                 cursor.execute(
                     """
                     UPDATE users 
-                    SET tokens_balance = tokens_balance - %s,
+                    SET tokens = tokens - %s,
                         premium_expires_at = %s
-                    WHERE user_id = %s AND tokens_balance >= %s
+                    WHERE user_id = %s AND tokens >= %s
                     """,
                     (tokens_cost, expires_at, user_id, tokens_cost)
                 )
@@ -1006,7 +1006,7 @@ class UserRepository:
                     (user_id, model_id, tokens_spent, days_purchased, expires_at)
                     VALUES (%s, %s, %s, %s, %s)
                     """,
-                    (user_id, 'premium_access', tokens_cost, tokens_cost // 300, expires_at)
+                    (user_id, 'premium_access', tokens_cost, days_purchased, expires_at)
                 )
                 
                 conn.commit()

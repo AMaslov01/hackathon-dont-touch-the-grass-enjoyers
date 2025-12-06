@@ -161,7 +161,8 @@ class LocalLLM:
 """
         else:
             # Llama-3 format (default)
-            prompt = f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+            # Note: <|begin_of_text|> is automatically added by llama-cpp-python, don't add it manually
+            prompt = f"""<|start_header_id|>system<|end_header_id|>
 
 {system_message}<|eot_id|><|start_header_id|>user<|end_header_id|>
 
