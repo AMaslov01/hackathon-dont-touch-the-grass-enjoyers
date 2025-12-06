@@ -85,16 +85,16 @@ MODELS: Dict[str, ModelConfig] = {
     # =========================================================================
     # ПРЕМИУМ ЛОКАЛЬНЫЕ МОДЕЛИ
     # =========================================================================
-    "qwen3-0.6b": ModelConfig(
-        id="qwen3-0.6b",
-        name="Qwen3-0.6B (Премиум)",
+    "aya-23-8b": ModelConfig(
+        id="aya-23-8b",
+        name="Aya-23-8B (Премиум)",
         tier=ModelTier.PREMIUM,
         model_type=ModelType.LOCAL,
-        description="⭐ Qwen3 - новейшая модель с режимом рассуждений",
-        repo_id="QuantFactory/Qwen3-0.6B-GGUF",
-        filename="Qwen3-0.6B.Q4_K_M.gguf",
-        prompt_format="qwen",
-        stop_tokens=["<|im_end|>", "<|endoftext|>"]
+        description="⭐ Aya-23 - мультиязычная модель от Cohere. Поддержка 23 языков с отличным качеством на русском.",
+        repo_id="bartowski/aya-23-8B-GGUF",
+        filename="aya-23-8B-Q4_K_M.gguf",
+        prompt_format="command-r",  # Aya использует формат Command-R от Cohere
+        stop_tokens=["<|END_OF_TURN_TOKEN|>"]
     ),
     
     # =========================================================================

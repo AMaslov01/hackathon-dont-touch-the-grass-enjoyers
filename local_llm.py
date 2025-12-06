@@ -146,7 +146,7 @@ class LocalLLM:
         Args:
             system_message: System prompt
             user_message: User message
-            prompt_format: Format type ('llama3' or 'qwen')
+            prompt_format: Format type ('llama3', 'qwen', or 'command-r')
             
         Returns:
             Formatted prompt string
@@ -159,6 +159,9 @@ class LocalLLM:
 {user_message}<|im_end|>
 <|im_start|>assistant
 """
+        elif prompt_format == "command-r":
+            # Aya-23 / Command-R format (Cohere)
+            prompt = f"""<|START_OF_TURN_TOKEN|><|SYSTEM_TOKEN|>{system_message}<|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|USER_TOKEN|>{user_message}<|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|>"""
         else:
             # Llama-3 format (default)
             # Note: <|begin_of_text|> is automatically added by llama-cpp-python, don't add it manually
