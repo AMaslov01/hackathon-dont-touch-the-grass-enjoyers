@@ -926,34 +926,90 @@ class UserRepository:
     
     # Model management methods
     
-    def get_user_model(self, user_id: int) -> Optional[str]:
-        """Get user's selected AI model"""
+    def get_user_model(self, user_id: int, ai_mode: str = None) -> Optional[str]:
+        """
+        Get user's selected AI model based on current AI_MODE
+        
+        Args:
+            user_id: Telegram user ID
+            ai_mode: 'local' or 'openrouter' (defaults to Config.AI_MODE)
+        
+        Returns:
+            Model ID string or None
+        """
+        from config import Config
+        if ai_mode is None:
+            ai_mode = Config.AI_MODE
+            
         conn = self.db.get_connection()
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                # Choose field based on AI mode
+                if ai_mode == 'local':
+                    field = 'current_local_model'
+                else:
+                    field = 'current_cloud_model'
+                
                 cursor.execute(
-                    "SELECT current_model FROM users WHERE user_id = %s",
+                    f"SELECT {field} FROM users WHERE user_id = %s",
                     (user_id,)
                 )
                 result = cursor.fetchone()
-                return result['current_model'] if result else None
+                return result[field] if result else None
         except Exception as e:
             logger.error(f"Failed to get user model for {user_id}: {e}")
-            return None
+            # Fallback to old column for backwards compatibility
+            try:
+                with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                    cursor.execute(
+                        "SELECT current_model FROM users WHERE user_id = %s",
+                        (user_id,)
+                    )
+                    result = cursor.fetchone()
+                    return result['current_model'] if result else None
+            except:
+                return None
         finally:
             self.db.return_connection(conn)
     
-    def set_user_model(self, user_id: int, model_id: str) -> bool:
-        """Set user's AI model"""
+    def set_user_model(self, user_id: int, model_id: str, ai_mode: str = None) -> bool:
+        """
+        Set user's AI model based on model type
+        
+        Args:
+            user_id: Telegram user ID
+            model_id: Model ID to set
+            ai_mode: 'local' or 'openrouter' (defaults to Config.AI_MODE)
+        
+        Returns:
+            True if successful
+        """
+        from config import Config
+        from model_manager import get_model_config, ModelType
+        
+        if ai_mode is None:
+            ai_mode = Config.AI_MODE
+        
+        # Determine which field to update based on model type
+        config = get_model_config(model_id)
+        if config:
+            if config.model_type == ModelType.LOCAL:
+                field = 'current_local_model'
+            else:
+                field = 'current_cloud_model'
+        else:
+            # Fallback: use AI_MODE to determine field
+            field = 'current_local_model' if ai_mode == 'local' else 'current_cloud_model'
+        
         conn = self.db.get_connection()
         try:
             with conn.cursor() as cursor:
                 cursor.execute(
-                    "UPDATE users SET current_model = %s WHERE user_id = %s",
+                    f"UPDATE users SET {field} = %s WHERE user_id = %s",
                     (model_id, user_id)
                 )
                 conn.commit()
-                logger.info(f"Set model {model_id} for user {user_id}")
+                logger.info(f"Set {field} to {model_id} for user {user_id}")
                 return True
         except Exception as e:
             conn.rollback()

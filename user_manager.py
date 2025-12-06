@@ -933,36 +933,47 @@ class UserManager:
 
     # Model management methods
 
-    def get_user_model(self, user_id: int) -> str:
+    def get_user_model(self, user_id: int, ai_mode: str = None) -> str:
         """
-        Get user's selected AI model
+        Get user's selected AI model based on current AI_MODE
         
         Args:
             user_id: Telegram user ID
+            ai_mode: 'local' or 'openrouter' (defaults to Config.AI_MODE)
         
         Returns:
-            Model ID (defaults to 'llama3-finance' if not set)
+            Model ID (defaults to mode-appropriate model if not set)
         """
+        from config import Config
+        from model_manager import get_default_model_id
+        
+        if ai_mode is None:
+            ai_mode = Config.AI_MODE
+            
         try:
-            model_id = user_repo.get_user_model(user_id)
-            return model_id if model_id else 'llama3-finance'
+            model_id = user_repo.get_user_model(user_id, ai_mode)
+            if not model_id:
+                # Return default model for current mode
+                return get_default_model_id(ai_mode)
+            return model_id
         except Exception as e:
             logger.error(f"Failed to get user model for {user_id}: {e}")
-            return 'llama3-finance'
+            return get_default_model_id(ai_mode)
 
-    def set_user_model(self, user_id: int, model_id: str) -> bool:
+    def set_user_model(self, user_id: int, model_id: str, ai_mode: str = None) -> bool:
         """
-        Set user's AI model
+        Set user's AI model (stores in appropriate field based on model type)
         
         Args:
             user_id: Telegram user ID
             model_id: Model ID to set
+            ai_mode: 'local' or 'openrouter' (defaults to Config.AI_MODE)
         
         Returns:
             True if successful
         """
         try:
-            return user_repo.set_user_model(user_id, model_id)
+            return user_repo.set_user_model(user_id, model_id, ai_mode)
         except Exception as e:
             logger.error(f"Failed to set user model for {user_id}: {e}")
             return False

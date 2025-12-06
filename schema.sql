@@ -20,7 +20,9 @@ CREATE TABLE IF NOT EXISTS users (
     completed_tasks INTEGER DEFAULT 0,
     abandonments_count INTEGER DEFAULT 0,
     active_business_id INTEGER,
-    current_model VARCHAR(50) DEFAULT 'llama3-finance',  -- Default для local режима; для openrouter будет glm-4.5-air (устанавливается в коде)
+    current_model VARCHAR(50) DEFAULT 'llama3-finance',  -- DEPRECATED: use current_local_model/current_cloud_model
+    current_local_model VARCHAR(100) DEFAULT 'llama3-finance',  -- User's preferred local model
+    current_cloud_model VARCHAR(100) DEFAULT 'deepseek-chimera',  -- User's preferred cloud model
     premium_expires_at TIMESTAMP,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP

@@ -4270,7 +4270,8 @@ async def my_model_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             message_text += f"Нет активной подписки ❌\n"
             message_text += f"Купите доступ: /buy\\_premium ({premium_price} токенов/день)\n"
 
-        message_text += f"\n\n_Сменить модель:_ /switch\\_model"
+        message_text += f"\n\n_Сменить модель:_ /switch\\_model\n"
+        message_text += f"_Купить премиум:_ /buy\\_premium"
 
         await update.message.reply_text(message_text, parse_mode='Markdown')
         logger.info(f"User {user_id} checked their model info")
