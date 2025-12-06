@@ -456,7 +456,7 @@ async def finance_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         if not active_business:
             await update.message.reply_text(
                 "У вас нет активного бизнеса. ❌\n\n"
-                "Создайте бизнес с помощью /create_business",
+                "Создайте бизнес с помощью /create\\_business",
                 parse_mode='Markdown'
             )
             return ConversationHandler.END
@@ -968,7 +968,7 @@ async def create_business_q4(update: Update, context: ContextTypes.DEFAULT_TYPE)
             f"✅ *Бизнес '{business_name}' успешно создан!*\n\n"
             f"Этот бизнес автоматически установлен как активный.\n"
             f"Используйте /switch_businesses для смены активного бизнеса.\n"
-            f"Используйте /delete_business для удаления бизнеса.",
+            f"Используйте /delete\\_business для удаления бизнеса.",
             parse_mode='HTML'
         )
 
@@ -983,7 +983,7 @@ async def create_business_q4(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def create_business_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handle cancellation of create business conversation"""
-    await update.message.reply_text("❌ Создание бизнеса отменено")
+    await update.message.reply_text("Создание бизнеса отменено ❌")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -1008,7 +1008,7 @@ async def switch_businesses_start(update: Update, context: ContextTypes.DEFAULT_
         if not businesses:
             await update.message.reply_text(
                 "У вас нет бизнесов. ❌\n\n"
-                "Создайте бизнес с помощью /create_business",
+                "Создайте бизнес с помощью /create\\_business",
                 parse_mode='HTML'
             )
             return ConversationHandler.END
@@ -1016,7 +1016,7 @@ async def switch_businesses_start(update: Update, context: ContextTypes.DEFAULT_
         if len(businesses) == 1:
             await update.message.reply_text(
                 "ℹ️ У вас только один бизнес.\n\n"
-                "Создайте ещё один с помощью /create_business",
+                "Создайте ещё один с помощью /create\\_business",
                 parse_mode='HTML'
             )
             return ConversationHandler.END
@@ -1060,7 +1060,7 @@ async def switch_businesses_id_handler(update: Update, context: ContextTypes.DEF
                 parse_mode='Markdown'
             )
         else:
-            await update.message.reply_text(f"❌ {message}", parse_mode='Markdown')
+            await update.message.reply_text(f"{message} ❌", parse_mode='Markdown')
 
         logger.info(f"User {user_id} tried to switch to business {business_id}: {success}")
 
@@ -1079,7 +1079,7 @@ async def switch_businesses_id_handler(update: Update, context: ContextTypes.DEF
 
 async def switch_businesses_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel switch businesses conversation"""
-    await update.message.reply_text("❌ Смена активного бизнеса отменена")
+    await update.message.reply_text("Смена активного бизнеса отменена ❌")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -1203,7 +1203,7 @@ async def delete_business_confirm_handler(update: Update, context: ContextTypes.
                 parse_mode='Markdown'
             )
         else:
-            await update.message.reply_text(f"❌ {message}", parse_mode='Markdown')
+            await update.message.reply_text(f"{message} ❌", parse_mode='Markdown')
 
         logger.info(f"User {user_id} tried to delete business {business_id}: {success}")
 
@@ -1217,7 +1217,7 @@ async def delete_business_confirm_handler(update: Update, context: ContextTypes.
 
 async def delete_business_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel delete business conversation"""
-    await update.message.reply_text("❌ Удаление бизнеса отменено")
+    await update.message.reply_text("Удаление бизнеса отменено ❌")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -1240,7 +1240,7 @@ async def clients_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         if not user_manager.has_active_business(user_id):
             await update.message.reply_text(
                 "У вас нет активного бизнеса. ❌\n\n"
-                "Создайте бизнес с помощью /create_business",
+                "Создайте бизнес с помощью /create\\_business",
                 parse_mode='Markdown'
             )
             return ConversationHandler.END
@@ -1433,7 +1433,7 @@ async def executors_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if not user_manager.has_active_business(user_id):
             await update.message.reply_text(
                 "У вас нет активного бизнеса. ❌\n\n"
-                "Создайте бизнес с помощью /create_business",
+                "Создайте бизнес с помощью /create\\_business",
                 parse_mode='Markdown'
             )
             return ConversationHandler.END
@@ -1717,7 +1717,7 @@ async def add_employee_process(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def add_employee_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel add employee conversation"""
-    await update.message.reply_text("❌ Приглашение сотрудника отменено")
+    await update.message.reply_text("Приглашение сотрудника отменено ❌")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -1817,7 +1817,7 @@ async def fire_employee_process(update: Update, context: ContextTypes.DEFAULT_TY
                 logger.error(f"Failed to notify fired employee {target_user_id}: {e}")
         else:
             escaped_message = escape_markdown(message)
-            await update.message.reply_text(f"❌ {escaped_message}", parse_mode='Markdown')
+            await update.message.reply_text(f"{escaped_message} ❌", parse_mode='Markdown')
         
         logger.info(f"User {user_id} tried to fire {target_username}: {success}")
         
@@ -1833,7 +1833,7 @@ async def fire_employee_process(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def fire_employee_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel fire employee conversation"""
-    await update.message.reply_text("❌ Увольнение сотрудника отменено")
+    await update.message.reply_text("Увольнение сотрудника отменено ❌")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -2067,7 +2067,7 @@ async def accept_invitation_process(update: Update, context: ContextTypes.DEFAUL
 
 async def accept_invitation_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel accept invitation conversation"""
-    await update.message.reply_text("❌ Принятие приглашения отменено")
+    await update.message.reply_text("Принятие приглашения отменено ❌")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -2155,7 +2155,7 @@ async def reject_invitation_process(update: Update, context: ContextTypes.DEFAUL
 
 async def reject_invitation_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel reject invitation conversation"""
-    await update.message.reply_text("❌ Отклонение приглашения отменено")
+    await update.message.reply_text("Отклонение приглашения отменено ❌")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -2237,7 +2237,7 @@ async def create_task_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         if not user_manager.has_active_business(user_id):
             await update.message.reply_text(
                 "У вас нет активного бизнеса. ❌\n\n"
-                "Создайте бизнес с помощью /create_business",
+                "Создайте бизнес с помощью /create\\_business",
                 parse_mode='Markdown'
             )
             return ConversationHandler.END
@@ -2387,7 +2387,7 @@ async def task_priority_handler(update: Update, context: ContextTypes.DEFAULT_TY
         )
 
         if not success:
-            await thinking_msg.edit_text(f"❌ {message}")
+            await thinking_msg.edit_text(f"{message} ❌")
             context.user_data.clear()
             return ConversationHandler.END
 
@@ -2431,7 +2431,7 @@ async def task_priority_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def task_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel task creation"""
-    await update.message.reply_text("❌ Создание задачи отменено")
+    await update.message.reply_text("Создание задачи отменено ❌")
     return ConversationHandler.END
 
 
@@ -2489,7 +2489,7 @@ async def available_tasks_command(update: Update, context: ContextTypes.DEFAULT_
 
 
 async def my_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle the /my_tasks command"""
+    """Handle the /my\\_tasks command"""
     user_id = update.effective_user.id
 
     try:
@@ -2635,7 +2635,7 @@ async def take_task_process(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 parse_mode='Markdown'
             )
         else:
-            await update.message.reply_text(f"❌ {message}", parse_mode='Markdown')
+            await update.message.reply_text(f"{message} ❌", parse_mode='Markdown')
 
         logger.info(f"User {user_id} tried to take task {task_id}: {success}")
 
@@ -2651,7 +2651,7 @@ async def take_task_process(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 async def take_task_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel take task conversation"""
-    await update.message.reply_text("❌ Взятие задачи отменено")
+    await update.message.reply_text("Взятие задачи отменено ❌")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -2665,7 +2665,7 @@ async def assign_task_start(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         if not user_manager.has_active_business(user_id):
             await update.message.reply_text(
                 "У вас нет активного бизнеса. ❌\n\n"
-                "Создайте бизнес с помощью /create_business",
+                "Создайте бизнес с помощью /create\\_business",
                 parse_mode='Markdown'
             )
             return ConversationHandler.END
@@ -2741,13 +2741,13 @@ async def assign_task_process(update: Update, context: ContextTypes.DEFAULT_TYPE
                             text=f"📋 *Новая задача назначена вам!*\n\n"
                                  f"*{escaped_title}*\n"
                                  f"{escaped_desc}\n\n"
-                                 f"Посмотреть свои задачи: `/my_tasks`",
+                                 f"Посмотреть свои задачи: `/my\\_tasks`",
                             parse_mode='Markdown'
                         )
                 except Exception as e:
                     logger.warning(f"Failed to notify employee {employee_id}: {e}")
         else:
-            await update.message.reply_text(f"❌ {message}", parse_mode='Markdown')
+            await update.message.reply_text(f"{message} ❌", parse_mode='Markdown')
 
         logger.info(f"User {user_id} tried to assign task {task_id} to @{employee_username}: {success}")
 
@@ -2763,7 +2763,7 @@ async def assign_task_process(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def assign_task_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel assign task conversation"""
-    await update.message.reply_text("❌ Назначение задачи отменено")
+    await update.message.reply_text("Назначение задачи отменено ❌")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -2880,7 +2880,7 @@ async def complete_task_process(update: Update, context: ContextTypes.DEFAULT_TY
                     except Exception as e:
                         logger.error(f"Failed to notify owner {owner_id} about submitted task {task_id}: {e}")
         else:
-            await update.message.reply_text(f"❌ {message}", parse_mode='Markdown')
+            await update.message.reply_text(f"{message} ❌", parse_mode='Markdown')
 
         logger.info(f"User {user_id} tried to complete task {task_id}: {success}")
 
@@ -2896,7 +2896,7 @@ async def complete_task_process(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def complete_task_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel complete task conversation"""
-    await update.message.reply_text("❌ Завершение задачи отменено")
+    await update.message.reply_text("Завершение задачи отменено ❌")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -2977,7 +2977,7 @@ async def abandon_task_process(update: Update, context: ContextTypes.DEFAULT_TYP
                 parse_mode='Markdown'
             )
         else:
-            await update.message.reply_text(f"❌ {message}", parse_mode='Markdown')
+            await update.message.reply_text(f"{message} ❌", parse_mode='Markdown')
 
         logger.info(f"User {user_id} tried to abandon task {task_id}: {success}")
 
@@ -3006,7 +3006,7 @@ async def all_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         if not user_manager.has_active_business(user_id):
             await update.message.reply_text(
                 "У вас нет активного бизнеса. ❌\n\n"
-                "Создайте бизнес с помощью /create_business",
+                "Создайте бизнес с помощью /create\\_business",
                 parse_mode='Markdown'
             )
             return
@@ -3059,7 +3059,7 @@ async def all_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                     tasks_text += f"  • ID {task['id']}: {escaped_title} (отказана: {escaped_abandoned_by})\n"
             tasks_text += "\n"
             tasks_text += "💡 *Отказанные задачи можно назначить другому сотруднику:*\n"
-            tasks_text += "Используйте команду `/assign_task `\n\n"
+            tasks_text += "Используйте команду `/assign\\_task `\n\n"
         if completed:
             tasks_text += f"*✅ Выполнено задач: {len(completed)}*\n"
 
@@ -3083,7 +3083,7 @@ async def submitted_tasks_command(update: Update, context: ContextTypes.DEFAULT_
         if not user_manager.has_active_business(user_id):
             await update.message.reply_text(
                 "У вас нет активного бизнеса. ❌\n\n"
-                "Создайте бизнес с помощью /create_business",
+                "Создайте бизнес с помощью /create\\_business",
                 parse_mode='Markdown'
             )
             return
@@ -3139,7 +3139,7 @@ async def review_task_start(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         if not user_manager.has_active_business(user_id):
             await update.message.reply_text(
                 "У вас нет активного бизнеса. ❌\n\n"
-                "Создайте бизнес с помощью /create_business",
+                "Создайте бизнес с помощью /create\\_business",
                 parse_mode='Markdown'
             )
             return ConversationHandler.END
@@ -3309,7 +3309,7 @@ async def review_task_decision_handler(update: Update, context: ContextTypes.DEF
                         logger.error(f"Failed to notify employee {employee_id} about rejected task {task_id}: {e}")
             else:
                 escaped_message = escape_markdown(message)
-                await update.message.reply_text(f"❌ {escaped_message}", parse_mode='Markdown')
+                await update.message.reply_text(f"{escaped_message} ❌", parse_mode='Markdown')
             
             context.user_data.clear()
             return ConversationHandler.END
@@ -3355,7 +3355,7 @@ async def review_task_decision_handler(update: Update, context: ContextTypes.DEF
                             logger.error(f"Failed to notify employee {employee_id} about task revision {task_id}: {e}")
                 else:
                     escaped_message = escape_markdown(message)
-                    await update.message.reply_text(f"❌ {escaped_message}", parse_mode='Markdown')
+                    await update.message.reply_text(f"{escaped_message} ❌", parse_mode='Markdown')
                 
                 context.user_data.clear()
                 return ConversationHandler.END
@@ -3405,7 +3405,7 @@ async def review_task_decision_handler(update: Update, context: ContextTypes.DEF
                         logger.error(f"Failed to notify employee {employee_id} about accepted task {task_id}: {e}")
             else:
                 escaped_message = escape_markdown(message)
-                await update.message.reply_text(f"❌ {escaped_message}", parse_mode='Markdown')
+                await update.message.reply_text(f"{escaped_message} ❌", parse_mode='Markdown')
             
             context.user_data.clear()
             return ConversationHandler.END
@@ -3422,7 +3422,7 @@ async def review_task_decision_handler(update: Update, context: ContextTypes.DEF
     except Exception as e:
         logger.error(f"Error in review_task_decision_handler for user {user_id}: {e}", exc_info=True)
         await update.message.reply_text(
-            "Произошла ошибка при обработке. ❌ Попробуйте снова с команды /review_task",
+            "Произошла ошибка при обработке. ❌ Попробуйте снова с команды /review\\_task",
             parse_mode='Markdown'
         )
         context.user_data.clear()
@@ -3431,7 +3431,7 @@ async def review_task_decision_handler(update: Update, context: ContextTypes.DEF
 
 async def review_task_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel review task conversation"""
-    await update.message.reply_text("❌ Проверка задачи отменена")
+    await update.message.reply_text("Проверка задачи отменена ❌")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -3574,7 +3574,7 @@ async def find_similar_command(update: Update, context: ContextTypes.DEFAULT_TYP
         if not user_manager.has_active_business(user_id):
             await update.message.reply_text(
                 "У вас нет активного бизнеса. ❌\n\n"
-                "Создайте бизнес с помощью /create_business",
+                "Создайте бизнес с помощью /create\\_business",
                 parse_mode='Markdown'
             )
             return
@@ -3912,7 +3912,7 @@ async def swipe_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             else:
                 logger.warning(f"Failed to invite candidate {candidate_username}: {message}")
                 await query.answer("❌ Ошибка")
-                await query.edit_message_text(f"❌ {message}")
+                await query.edit_message_text(f"{message} ❌")
                 return ConversationHandler.END
 
         elif data.startswith("swipe_reject_"):
@@ -4009,7 +4009,7 @@ async def swipe_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
 async def find_employees_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel swipe employees"""
-    await update.message.reply_text("❌ Просмотр кандидатов отменен")
+    await update.message.reply_text("Просмотр кандидатов отменен ❌")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -4169,7 +4169,7 @@ async def switch_model_id_handler(update: Update, context: ContextTypes.DEFAULT_
 
 async def switch_model_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel switch model conversation"""
-    await update.message.reply_text("❌ Переключение модели отменено")
+    await update.message.reply_text("Переключение модели отменено ❌")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -4197,7 +4197,7 @@ async def my_model_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
         config = get_model_config(model_id)
         if not config:
-            await update.message.reply_text("❌ Ошибка получения информации о модели")
+            await update.message.reply_text("Ошибка получения информации о модели ❌")
             return
 
         # Build message
@@ -4419,7 +4419,7 @@ async def buy_premium_confirm_handler(update: Update, context: ContextTypes.DEFA
 
 async def buy_premium_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel premium purchase"""
-    await update.message.reply_text("❌ Покупка премиум доступа отменена")
+    await update.message.reply_text("Покупка премиум доступа отменена ❌")
     context.user_data.clear()
     return ConversationHandler.END
 
