@@ -80,6 +80,29 @@ MODELS: Dict[str, ModelConfig] = {
     # =========================================================================
     # БЕСПЛАТНЫЕ OPENROUTER МОДЕЛИ
     # =========================================================================
+    "deepseek-chimera": ModelConfig(
+        id="deepseek-v3",
+        name="DeepSeek V3 (Премиум)",
+        tier=ModelTier.PREMIUM,
+        model_type=ModelType.OPENROUTER,
+        description="⭐ DeepSeek chimera - мощная модель с контекстом 64K токенов.",
+        openrouter_id="tngtech/deepseek-r1t2-chimera:free"  # БЕСПЛАТНАЯ на OpenRouter!
+    ),
+    
+    
+    # =========================================================================
+    # ПРЕМИУМ OPENROUTER МОДЕЛИ (облачные, требуют реальной оплаты на OpenRouter)
+    # =========================================================================
+    
+    "meta-llama": ModelConfig(
+        id="meta-llama",
+        name="meta-llama (Премиум)",
+        tier=ModelTier.PREMIUM,
+        model_type=ModelType.OPENROUTER,
+        description="⭐ meta-llama/llama - быстрая экспериментальная модель от Google.",
+        openrouter_id="meta-llama/llama-3.3-70b-instruct:free"  # БЕСПЛАТНАЯ на OpenRouter!
+    ),
+    
     "glm-4.5-air": ModelConfig(
         id="glm-4.5-air",
         name="GLM-4.5-Air (Бесплатная)",
@@ -87,28 +110,6 @@ MODELS: Dict[str, ModelConfig] = {
         model_type=ModelType.OPENROUTER,
         description="Быстрая облачная модель для общих задач. Требует интернет.",
         openrouter_id="z-ai/glm-4.5-air:free"
-    ),
-    
-    # =========================================================================
-    # ПРЕМИУМ OPENROUTER МОДЕЛИ (облачные, требуют реальной оплаты на OpenRouter)
-    # =========================================================================
-    
-    "gemini-2-flash": ModelConfig(
-        id="gemini-2-flash",
-        name="Gemini 2.0 Flash (Премиум)",
-        tier=ModelTier.PREMIUM,
-        model_type=ModelType.OPENROUTER,
-        description="⭐ Google Gemini 2.0 Flash - быстрая экспериментальная модель от Google.",
-        openrouter_id="google/gemini-2.0-flash-exp:free"  # БЕСПЛАТНАЯ на OpenRouter!
-    ),
-    
-    "deepseek-v3": ModelConfig(
-        id="deepseek-v3",
-        name="DeepSeek V3 (Премиум)",
-        tier=ModelTier.PREMIUM,
-        model_type=ModelType.OPENROUTER,
-        description="⭐ DeepSeek V3 - мощная модель с контекстом 64K токенов.",
-        openrouter_id="deepseek/deepseek-chat:free"  # БЕСПЛАТНАЯ на OpenRouter!
     ),
     
     
