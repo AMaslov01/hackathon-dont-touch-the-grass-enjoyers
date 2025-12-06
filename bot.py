@@ -102,6 +102,50 @@ def fix_emoji_at_start(text: str) -> str:
     return text
 
 
+def validate_and_fix_user_model(user_id: int) -> str:
+    """
+    Validate user's current model and auto-switch to free model if premium expired.
+    
+    This function checks if the user has access to their currently selected model.
+    If the user's premium has expired and they're using a premium model,
+    it automatically switches them to the default free model AND SAVES TO DATABASE.
+    
+    Args:
+        user_id: Telegram user ID
+        
+    Returns:
+        The model ID the user should use (may be different from their saved model)
+    """
+    from model_manager import can_user_access_model, get_model_config, get_default_model_id, ModelTier
+    from config import Config
+    
+    # Get user's current model and premium status
+    current_model = user_manager.get_user_model(user_id)
+    premium_expires = user_manager.get_user_premium_expires(user_id)
+    
+    # Check if user has access to their current model
+    if can_user_access_model(current_model, premium_expires):
+        # All good - user has access
+        return current_model
+    
+    # User doesn't have access (premium expired) - switch to default free model
+    logger.warning(f" User {user_id} lost access to model '{current_model}' (premium expired)")
+    
+    default_model = get_default_model_id(Config.AI_MODE)
+    
+    # Auto-switch to free model and SAVE TO DATABASE
+    logger.info(f"Switching user {user_id} to free model '{default_model}'...")
+    success = user_manager.set_user_model(user_id, default_model)
+    
+    if success:
+        logger.info(f"User {user_id} model updated in DATABASE: {current_model} -> {default_model}")
+        return default_model
+    else:
+        logger.error(f"FAILED to update user {user_id} model in DATABASE! Using default anyway for safety.")
+        # Return default anyway to prevent using premium model without access
+        return default_model
+
+
 def format_models_list(models: dict, show_price: bool = False) -> str:
     """
     Format a list of models for display in Telegram message
@@ -448,8 +492,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         # Generate AI response
         try:
-            # Get user's selected model
-            user_model = user_manager.get_user_model(user_id)
+            # Get user's selected model (with automatic premium expiry check)
+            user_model = validate_and_fix_user_model(user_id)
             
             ai_response = ai_client.generate_response(user_message, model_id=user_model)
             
@@ -462,12 +506,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
             # Send response with Markdown formatting
             # Note: AI responses are not escaped as they contain intentional markdown formatting
+            # Don't add emoji at start - it breaks Telegram Markdown parser!
             try:
-                await thinking_msg.edit_text(f"💡 {ai_response}", parse_mode='Markdown')
+                await thinking_msg.edit_text(ai_response, parse_mode='Markdown')
             except BadRequest as e:
                 # If Markdown parsing fails, send as plain text
                 logger.warning(f"Markdown parsing failed for user {user_id}, sending as plain text: {e}")
-                await thinking_msg.edit_text(f"💡 {ai_response}")
+                await thinking_msg.edit_text(ai_response)
 
             # Log usage
             user_manager.log_usage(user_id, user_message, ai_response)
@@ -747,8 +792,8 @@ async def finance_generate_plan(update: Update, context: ContextTypes.DEFAULT_TY
         # Update status message
         await thinking_msg.edit_text("🤖 Генерирую финансовый план с помощью AI...(это может занять до 5 минут)")
 
-        # Generate financial plan using AI with user's selected model
-        user_model = user_manager.get_user_model(user_id)
+        # Generate financial plan using AI with user's selected model (with auto premium check)
+        user_model = validate_and_fix_user_model(user_id)
         financial_plan = ai_client.generate_financial_plan(business_info, model_id=user_model)
         
         # Fix emoji at start (breaks Telegram Markdown parser)
@@ -1437,8 +1482,8 @@ async def clients_search(update: Update, context: ContextTypes.DEFAULT_TYPE,
             await thinking_msg.edit_text(MESSAGES['clients_no_info'])
             return ConversationHandler.END
 
-        # Search for clients using AI with user's selected model
-        user_model = user_manager.get_user_model(user_id)
+        # Search for clients using AI with user's selected model (with auto premium check)
+        user_model = validate_and_fix_user_model(user_id)
         search_results = ai_client.find_clients(workers_info, model_id=user_model)
         
         # Fix emoji at start (breaks Telegram Markdown parser)
@@ -1633,8 +1678,8 @@ async def executors_search(update: Update, context: ContextTypes.DEFAULT_TYPE,
             await thinking_msg.edit_text(MESSAGES['executors_no_info'])
             return ConversationHandler.END
 
-        # Search for executors using AI with user's selected model
-        user_model = user_manager.get_user_model(user_id)
+        # Search for executors using AI with user's selected model (with auto premium check)
+        user_model = validate_and_fix_user_model(user_id)
         search_results = ai_client.find_executors(executors_info, model_id=user_model)
         
         # Fix emoji at start (breaks Telegram Markdown parser)
@@ -3731,8 +3776,8 @@ async def find_similar_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
             logger.info(f"Finding similar users for {user_id} among {len(parsed_users)} candidates")
 
-            # Find similar users using AI with user's selected model
-            user_model = user_manager.get_user_model(user_id)
+            # Find similar users using AI with user's selected model (with auto premium check)
+            user_model = validate_and_fix_user_model(user_id)
             search_results = ai_client.find_similar_users(current_user_info, parsed_users, model_id=user_model)
             
             # Fix emoji at start (breaks Telegram Markdown parser)
