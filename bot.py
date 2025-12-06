@@ -31,7 +31,7 @@ from constants import TOKEN_CONFIG
 from pdf_generator_simple import pdf_generator, chat_history_pdf
 from model_manager import (
     get_model_config, get_free_models, get_premium_models,
-    get_local_models, get_openrouter_models, format_models_list,
+    get_local_models, get_openrouter_models,
     ModelTier, ModelType
 )
 
@@ -68,6 +68,39 @@ def escape_markdown(text: str) -> str:
         text = text.replace(char, '\\' + char)
 
     return text
+
+
+def format_models_list(models: dict, show_price: bool = False) -> str:
+    """
+    Format a list of models for display in Telegram message
+    
+    Args:
+        models: Dictionary of model configs
+        show_price: Whether to show premium price
+        
+    Returns:
+        Formatted string with model list
+    """
+    from constants import TOKEN_CONFIG
+    
+    result = ""
+    for model_id, config in models.items():
+        # Escape model name and description for Markdown safety
+        escaped_name = escape_markdown(config.name)
+        escaped_desc = escape_markdown(config.description)
+        
+        result += f"*ID:* `{model_id}`\n"
+        result += f"*Название:* {escaped_name}\n"
+        result += f"{escaped_desc}\n"
+        
+        if show_price:
+            price = TOKEN_CONFIG['premium_price_per_day']
+            result += f"💰 Цена: {price} токенов/день\n"
+        
+        result += "\n"
+    
+    return result
+
 
 # Finance conversation states
 CHECKING_EXISTING, QUESTION_1, QUESTION_2, QUESTION_3, QUESTION_4 = range(5)
@@ -4038,7 +4071,11 @@ async def switch_model_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         # Show current model
         current_config = get_model_config(current_model_id)
-        current_model_text = f"*Ваша текущая модель:* {current_config.name}\n\n" if current_config else ""
+        if current_config:
+            escaped_current_name = escape_markdown(current_config.name)
+            current_model_text = f"*Ваша текущая модель:* {escaped_current_name}\n\n"
+        else:
+            current_model_text = ""
 
         # Filter models based on AI_MODE
         if Config.AI_MODE == 'local':
@@ -4203,12 +4240,16 @@ async def my_model_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         # Build message
         type_text = "Локальная 💻" if config.model_type == ModelType.LOCAL else "Облачная ☁️"
         tier_text = "Премиум ⭐" if config.tier == ModelTier.PREMIUM else "Бесплатная 🆓"
+        
+        # Escape model name and description for Markdown
+        escaped_name = escape_markdown(config.name)
+        escaped_desc = escape_markdown(config.description)
 
         message_text = f"*Информация о вашей модели* 🤖\n\n"
-        message_text += f"*Название:* {config.name}\n"
+        message_text += f"*Название:* {escaped_name}\n"
         message_text += f"*Тип:* {type_text}\n"
         message_text += f"*Уровень:* {tier_text}\n\n"
-        message_text += f"{config.description}\n\n"
+        message_text += f"{escaped_desc}\n\n"
 
         # Show premium status
         message_text += "*Премиум статус:* 💎\n"
