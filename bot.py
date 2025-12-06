@@ -99,7 +99,7 @@ REVIEW_TASK_ID, REVIEW_TASK_DECISION = range(23, 25)
 FIRE_EMPLOYEE_USERNAME = range(25, 26)
 
 # Swipe employees states
-SWIPE_EMPLOYEES_VIEWING = range(26, 27)
+FIND_EMPLOYEES_VIEWING = range(26, 27)
 
 # Create business conversation states (similar to finance)
 CREATE_BUSINESS_Q1, CREATE_BUSINESS_Q2, CREATE_BUSINESS_Q3, CREATE_BUSINESS_Q4 = range(27, 31)
@@ -3691,7 +3691,7 @@ async def find_similar_command(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text(MESSAGES['similar_error'])
 
 
-async def swipe_employees_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def find_employees_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start the swipe employees feature"""
     user_id = update.effective_user.id
 
@@ -3748,7 +3748,7 @@ async def swipe_employees_start(update: Update, context: ContextTypes.DEFAULT_TY
         return await show_next_candidate(update, context)
 
     except Exception as e:
-        logger.error(f"Error in swipe_employees_start for user {user_id}: {e}")
+        logger.error(f"Error in find_employees_start for user {user_id}: {e}")
         await update.message.reply_text(MESSAGES['database_error'])
         return ConversationHandler.END
 
@@ -3820,7 +3820,7 @@ async def show_next_candidate(update: Update, context: ContextTypes.DEFAULT_TYPE
             reply_markup=reply_markup
         )
 
-    return SWIPE_EMPLOYEES_VIEWING
+    return FIND_EMPLOYEES_VIEWING
 
 
 async def swipe_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -3990,7 +3990,7 @@ async def swipe_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         
         logger.info(f"Successfully sent message {sent_message.message_id} to user {user_id}")
 
-        return SWIPE_EMPLOYEES_VIEWING
+        return FIND_EMPLOYEES_VIEWING
 
     except Exception as e:
         logger.error(f"Error in swipe_callback_handler for user {user_id}: {e}", exc_info=True)
@@ -4006,7 +4006,7 @@ async def swipe_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         return ConversationHandler.END
 
 
-async def swipe_employees_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def find_employees_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel swipe employees"""
     await update.message.reply_text("❌ Просмотр кандидатов отменен")
     context.user_data.clear()
@@ -4501,7 +4501,7 @@ async def setup_bot_commands(application):
         BotCommand("find_similar", "Найти партнёров"),
         BotCommand("export_history", "Экспорт истории чата в PDF"),
         BotCommand("add_employee", "Пригласить сотрудника"),
-        BotCommand("swipe_employees", "🔍 Найти сотрудников (свайп)"),
+        BotCommand("find_employees", "🔍 Найти сотрудников"),
         BotCommand("fire_employee", "Уволить сотрудника"),
         BotCommand("employees", "Список сотрудников"),
         BotCommand("invitations", "Посмотреть приглашения"),
@@ -4820,17 +4820,17 @@ def main() -> None:
         )
         application.add_handler(executors_handler)
 
-        # Register swipe employees conversation handler
-        swipe_employees_handler = ConversationHandler(
-            entry_points=[CommandHandler("swipe_employees", swipe_employees_start)],
+        # Register find employees conversation handler
+        find_employees_handler = ConversationHandler(
+            entry_points=[CommandHandler("find_employees", find_employees_start)],
             states={
-                SWIPE_EMPLOYEES_VIEWING: [
+                FIND_EMPLOYEES_VIEWING: [
                     CallbackQueryHandler(swipe_callback_handler, pattern="^swipe_(accept|reject)_")
                 ],
             },
-            fallbacks=[CommandHandler("cancel", swipe_employees_cancel)],  # Track callback queries per message
+            fallbacks=[CommandHandler("cancel", find_employees_cancel)],  # Track callback queries per message
         )
-        application.add_handler(swipe_employees_handler)
+        application.add_handler(find_employees_handler)
 
         # Register model management conversation handlers
         switch_model_handler = ConversationHandler(
