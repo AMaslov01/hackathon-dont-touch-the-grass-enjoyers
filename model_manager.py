@@ -119,7 +119,7 @@ MODELS: Dict[str, ModelConfig] = {
 
 # Дефолтные модели для новых пользователей (зависит от режима работы)
 DEFAULT_MODEL_ID_LOCAL = "llama3-finance"  # Для режима local
-DEFAULT_MODEL_ID_OPENROUTER = "glm-4.5-air"  # Для режима openrouter
+DEFAULT_MODEL_ID_OPENROUTER = "deepseek-chimera"  # Для режима openrouter
 
 
 def get_default_model_id(ai_mode: str = "local") -> str:
