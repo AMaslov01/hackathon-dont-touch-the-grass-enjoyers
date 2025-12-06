@@ -10,8 +10,11 @@ python-dotenv>=1.0.0
 # Database
 psycopg2-binary>=2.9.9
 
-# PDF generation
-reportlab>=4.0.0
+# PDF generation (simplified with WeasyPrint)
+weasyprint>=60.0
+markdown>=3.5.0
+# Old PDF generator (if needed as fallback):
+# reportlab>=4.0.0
 
 # Local LLM support
 llama-cpp-python>=0.2.0
@@ -30,15 +33,13 @@ langchain-experimental>=0.0.1
 langchain-core>=0.1.0
 langchain-community>=0.0.1
 
-# Translation (for models trained on English)
-sentencepiece>=0.1.99  # Required for OPUS-MT models
-sacremoses>=0.0.53  # Required for some translation models
-
 # Document loaders (for RAG via LangChain)
 pypdf>=3.0.0
 python-docx>=1.0.0
 openpyxl>=3.1.0  # For Excel files (.xlsx)
 xlrd>=2.0.0  # For old Excel files (.xls)
+msoffcrypto-tool>=5.0.0  # For password-protected Excel/Word files
+pandas>=2.0.0  # Required for Excel parsing
 unstructured>=0.10.0
 # Additional dependencies for unstructured
 python-magic>=0.4.27  # File type detection

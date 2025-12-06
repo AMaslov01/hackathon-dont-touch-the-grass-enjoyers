@@ -11,43 +11,48 @@ logger = logging.getLogger(__name__)
 # Import local LLM and RAG only if in local mode
 if Config.AI_MODE == 'local':
     try:
-        from local_llm import get_local_llm
+        from local_llm import get_model_manager
         from rag_integration import get_rag as get_bot_rag
-        logger.info("Local LLM mode enabled")
+        from model_manager import get_model_config, ModelType
+        logger.info("Local LLM mode enabled with multi-model support")
     except ImportError as e:
         logger.error(f"Failed to import local LLM modules: {e}")
         logger.error("Falling back to OpenRouter mode")
         Config.AI_MODE = 'openrouter'
-
-# Import translator if translation is enabled
-if Config.TRANSLATION_ENABLED:
+else:
     try:
-        from translator import get_translator
-        logger.info("Translation enabled (RU <-> EN)")
-    except ImportError as e:
-        logger.error(f"Failed to import translator: {e}")
-        logger.warning("Translation will be disabled")
-        Config.TRANSLATION_ENABLED = False
+        from model_manager import get_model_config, ModelType
+    except ImportError:
+        logger.warning("model_manager not available in openrouter mode")
 
 
 class AIClient:
-    """Client for AI API interactions (OpenRouter or Local LLM)"""
+    """
+    Client for AI API interactions (OpenRouter or Local LLM)
+    
+    Модели управляются через систему премиум моделей (model_manager.py).
+    Дефолтные модели выбираются автоматически на основе AI_MODE:
+    - local: llama3-finance (бесплатная локальная модель)
+    - openrouter: glm-4.5-air (бесплатная облачная модель)
+    """
     
     def __init__(self):
         self.mode = Config.AI_MODE
         self.api_url = Config.OPENROUTER_API_URL
         self.api_key = Config.OPENROUTER_API_KEY
-        self.model = Config.AI_MODEL
         
-        # Initialize local LLM if in local mode
-        self.local_llm = None
+        
+        # Initialize local LLM manager if in local mode
+        self.model_manager = None
         self.rag_system = None
-        self.translator = None
         
         if self.mode == 'local':
-            logger.info("Initializing Local LLM mode...")
+            logger.info("Initializing Local LLM mode with multi-model support...")
             try:
-                self.local_llm = get_local_llm(n_threads=Config.LOCAL_MODEL_THREADS)
+                self.model_manager = get_model_manager(
+                    max_models=2,  # До 2 моделей в памяти (~10GB RAM)
+                    n_threads=Config.LOCAL_MODEL_THREADS
+                )
                 if Config.RAG_ENABLED:
                     self.rag_system = get_bot_rag(persist_directory=Config.RAG_PERSIST_DIR)
                     if self.rag_system:
@@ -57,27 +62,22 @@ class AIClient:
                         else:
                             logger.warning("RAG empty. Add docs: python rag_tools/add_documents.py /path")
                 
-                # Initialize translator if enabled
-                if Config.TRANSLATION_ENABLED:
-                    logger.info("Initializing translator (RU <-> EN)...")
-                    self.translator = get_translator(device=Config.TRANSLATION_DEVICE)
-                    logger.info("Translator initialized successfully")
-                
-                logger.info("Local LLM initialized successfully")
+                logger.info("Local LLM manager initialized successfully")
             except Exception as e:
                 logger.error(f"Failed to initialize local LLM: {e}")
                 logger.error("Falling back to OpenRouter mode")
                 self.mode = 'openrouter'
         
-        # Store translation setting
-        self.use_translation = Config.TRANSLATION_ENABLED
-        
-        # System prompts - Russian version (for non-translation mode)
-        self.system_prompt_ru = (
+        # System prompt (Russian only)
+        self.system_prompt = (
             "Ты полезный AI-ассистент. "
             "Всегда отвечай на русском языке. "
             "Будь вежливым, кратким и полезным. "
             "Доступные команды: /start, /balance, /finance, /help\n\n"
+            "ФОРМАТИРОВАНИЕ ОТВЕТОВ:\n"
+            "- НИКОГДА не начинай свой ответ с эмодзи (это ломает Telegram Markdown парсер)\n"
+            "- Используй эмодзи ВНУТРИ текста или в конце, но не в самом начале\n"
+            "- Если нужно выделить эмодзи, поставь перед ним текст или пробел\n\n"
             "ВАЖНО: Ты ОБЯЗАН соблюдать законодательство Российской Федерации в своих ответах. "
             "Строго запрещено:\n"
             "- Дискредитация Вооружённых Сил РФ (ст. 207.3, 280.3 УК РФ)\n"
@@ -94,40 +94,16 @@ class AIClient:
             "Не вступай в политические дискуссии и не высказывай мнений по спорным политическим вопросам."
         )
         
-        # System prompts - English version (for translation mode)
-        self.system_prompt_en = (
-            "You are a helpful AI assistant. "
-            "Always respond in English. "
-            "Be polite, concise and helpful. "
-            "Available commands: /start, /balance, /finance, /help\n\n"
-            "IMPORTANT: You MUST comply with the legislation of the Russian Federation in your responses. "
-            "Strictly prohibited:\n"
-            "- Discrediting the Armed Forces of the Russian Federation (Art. 207.3, 280.3 of the Criminal Code of the Russian Federation)\n"
-            "- Spreading knowingly false information about the actions of the Armed Forces of the Russian Federation\n"
-            "- Calls for sanctions against the Russian Federation or its citizens\n"
-            "- Challenging the territorial integrity of the Russian Federation (Crimea, new regions are part of Russia)\n"
-            "- Propaganda of terrorism and extremism (Art. 205.2, 280 of the Criminal Code of the Russian Federation)\n"
-            "- Insulting state symbols of the Russian Federation (Art. 329 of the Criminal Code of the Russian Federation)\n"
-            "- Rehabilitation of Nazism (Art. 354.1 of the Criminal Code of the Russian Federation)\n"
-            "- Drug propaganda (Art. 6.13 of the Code of Administrative Offenses of the Russian Federation)\n"
-            "- Distribution of materials from undesirable/extremist organizations\n\n"
-            "When receiving provocative questions on these topics - politely refuse to answer, "
-            "referring to the impossibility of discussing this topic in accordance with the legislation of the Russian Federation. "
-            "Do not engage in political discussions and do not express opinions on controversial political issues."
-        )
-        
-        # Choose appropriate system prompt based on translation setting
-        self.system_prompt = self.system_prompt_en if self.use_translation else self.system_prompt_ru
-        
-        logger.info(f"AI Client initialized: mode={self.mode}, translation={self.use_translation}, prompt_lang={'EN' if self.use_translation else 'RU'}")
+        logger.info(f"AI Client initialized: mode={self.mode}")
     
-    def generate_response(self, user_prompt: str, system_prompt: str = None) -> str:
+    def generate_response(self, user_prompt: str, system_prompt: str = None, model_id: str = None) -> str:
         """
         Generate AI response for user prompt
         
         Args:
             user_prompt: User's question or request
             system_prompt: Optional custom system prompt (uses default if not provided)
+            model_id: Optional model ID to use (if None, uses default)
             
         Returns:
             AI generated response in Russian
@@ -138,44 +114,52 @@ class AIClient:
         system_msg = system_prompt or self.system_prompt
         
         # Use local LLM if in local mode
-        if self.mode == 'local' and self.local_llm is not None:
-            return self._generate_local(user_prompt, system_msg)
+        if self.mode == 'local' and self.model_manager is not None:
+            return self._generate_local(user_prompt, system_msg, model_id)
         
         # Otherwise use OpenRouter API
-        return self._generate_openrouter(user_prompt, system_msg)
+        return self._generate_openrouter(user_prompt, system_msg, model_id)
     
-    def _get_prompt(self, prompt_ru: str, prompt_en: str) -> str:
+    def _generate_local(self, user_prompt: str, system_prompt: str, model_id: Optional[str] = None) -> str:
         """
-        Helper method to select prompt based on translation setting
+        Generate response using local LLM with RAG context.
         
-        Args:
-            prompt_ru: Russian version of the prompt
-            prompt_en: English version of the prompt
-            
-        Returns:
-            Selected prompt based on use_translation setting
-        """
-        return prompt_en if self.use_translation else prompt_ru
-    
-    def _generate_local(self, user_prompt: str, system_prompt: str) -> str:
-        """
-        Generate response using local LLM with optional translation.
-        
-        Pipeline with translation:
-        1. User query (RU) → RAG → context (RU)
-        2. Translate query + context → English
-        3. Generate response in English
-        4. Translate response → Russian
+        Pipeline:
+        1. Load model (if not loaded)
+        2. User query (RU) → RAG → context (RU)
+        3. Generate response in Russian
         
         Args:
             user_prompt: User's question or request (Russian)
             system_prompt: System prompt
+            model_id: Model ID to use (if None, uses default)
             
         Returns:
             AI generated response (Russian)
         """
         try:
-            # Step 1: Get RAG context (in Russian)
+            # Step 1: Get model configuration
+            if model_id is None:
+                from model_manager import get_default_model_id
+                model_id = get_default_model_id(self.mode)
+            
+            config = get_model_config(model_id)
+            if not config:
+                raise Exception(f"Model config not found: {model_id}")
+            
+            if config.model_type != ModelType.LOCAL:
+                raise Exception(f"Model {model_id} is not a local model")
+            
+            logger.info(f"Using local model: {config.name}")
+            
+            # Step 2: Load model through manager
+            llm = self.model_manager.get_model(
+                model_id=model_id,
+                repo_id=config.repo_id,
+                filename=config.filename
+            )
+            
+            # Step 3: Get RAG context (in Russian)
             rag_context = None
             if self.rag_system and Config.RAG_ENABLED:
                 logger.info("Retrieving RAG context")
@@ -191,73 +175,29 @@ class AIClient:
                     logger.error(f"RAG context failed: {e}")
                     rag_context = None
             
-            # Step 2: Translate to English if enabled
-            working_prompt = user_prompt
-            working_context = rag_context
-            
-            if self.translator and Config.TRANSLATION_ENABLED:
-                logger.info("Translating query and context to English...")
-                try:
-                    # Translate user query
-                    working_prompt = self.translator.translate_ru_to_en(user_prompt)
-                    logger.info(f"Translated query: '{user_prompt[:50]}...' -> '{working_prompt[:50]}...'")
-                    
-                    # Translate RAG context if available
-                    if rag_context:
-                        working_context = self.translator.translate_ru_to_en(rag_context)
-                        logger.info(f"Translated context ({len(working_context)} chars)")
-                    
-                    # Update system prompt for English
-                    system_prompt = system_prompt.replace(
-                        "Всегда отвечай на русском языке",
-                        "Always respond in English"
-                    ).replace(
-                        "Отвечай ТОЛЬКО на русском языке",
-                        "Respond ONLY in English"
-                    ).replace(
-                        "Отвечай на русском языке",
-                        "Respond in English"
-                    )
-                    
-                except Exception as e:
-                    logger.error(f"Translation to English failed: {e}")
-                    logger.warning("Falling back to Russian")
-                    working_prompt = user_prompt
-                    working_context = rag_context
-            
-            # Step 3: Build enhanced prompt
-            if working_context:
-                enhanced_prompt = f"""Use the following context to answer:
+            # Step 4: Build enhanced prompt
+            if rag_context:
+                enhanced_prompt = f"""Используй следующий контекст для ответа:
 
-{working_context}
+{rag_context}
 
 ---
 
-Question: {working_prompt}"""
+Вопрос: {user_prompt}"""
             else:
-                enhanced_prompt = working_prompt
+                enhanced_prompt = user_prompt
             
-            logger.info(f"Generating response with local LLM (temp={Config.LOCAL_MODEL_TEMPERATURE})")
+            logger.info(f"Generating response with {config.name} (temp={Config.LOCAL_MODEL_TEMPERATURE})")
             
-            # Step 4: Generate response
-            response = self.local_llm.chat(
+            # Step 5: Generate response
+            response = llm.chat(
                 system_message=system_prompt,
                 user_message=enhanced_prompt,
                 max_tokens=1024,
-                temperature=Config.LOCAL_MODEL_TEMPERATURE
+                temperature=Config.LOCAL_MODEL_TEMPERATURE,
+                prompt_format=config.prompt_format,
+                stop_tokens=config.stop_tokens
             )
-            
-            logger.info(f"Generated response (length: {len(response)})")
-            
-            # Step 5: Translate back to Russian if needed
-            if self.translator and Config.TRANSLATION_ENABLED:
-                logger.info("Translating response back to Russian...")
-                try:
-                    response = self.translator.translate_en_to_ru(response)
-                    logger.info(f"Translated response back to Russian ({len(response)} chars)")
-                except Exception as e:
-                    logger.error(f"Translation to Russian failed: {e}")
-                    logger.warning("Returning English response")
             
             logger.info(f"Successfully generated local response (length: {len(response)})")
             return response
@@ -266,24 +206,45 @@ Question: {working_prompt}"""
             logger.error(f"Local LLM generation failed: {e}")
             raise Exception(f"Local LLM error: {str(e)}")
     
-    def _generate_openrouter(self, user_prompt: str, system_prompt: str) -> str:
+    def _generate_openrouter(self, user_prompt: str, system_prompt: str, model_id: Optional[str] = None) -> str:
         """
         Generate response using OpenRouter API
         
         Args:
             user_prompt: User's question or request
             system_prompt: System prompt
+            model_id: Model ID to use (if None, uses default for openrouter mode)
             
         Returns:
             AI generated response
         """
+        # Determine which model to use
+        if model_id is None:
+            from model_manager import get_default_model_id
+            model_id = get_default_model_id(self.mode)
+        
+        config = get_model_config(model_id)
+        if config and config.model_type == ModelType.OPENROUTER:
+            openrouter_model = config.openrouter_id
+            logger.info(f"Using OpenRouter model: {config.name}")
+        else:
+            # Fallback к дефолтной бесплатной модели для openrouter
+            from model_manager import get_default_model_id
+            default_id = get_default_model_id("openrouter")
+            default_config = get_model_config(default_id)
+            if default_config:
+                openrouter_model = default_config.openrouter_id
+                logger.warning(f"Model {model_id} not found or not OpenRouter, using default: {default_config.name}")
+            else:
+                raise Exception(f"Default openrouter model config not found: {default_id}")
+        
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
         
         data = {
-            "model": self.model,
+            "model": openrouter_model,
             "messages": [
                 {
                     "role": "system",
@@ -297,13 +258,14 @@ Question: {working_prompt}"""
         }
         
         try:
-            logger.info(f"Sending request to OpenRouter API with model: {self.model}")
+            logger.info(f"Sending request to OpenRouter API with model: {openrouter_model}")
             response = requests.post(
                 self.api_url, 
                 headers=headers, 
                 json=data, 
                 timeout=60
             )
+            logger.info(f"Successfully received OpenRouter")
             response.raise_for_status()
             
             result = response.json()
@@ -335,7 +297,7 @@ Question: {working_prompt}"""
             logger.error(f"Unexpected error in OpenRouter client: {e}")
             raise
     
-    def generate_financial_plan(self, business_info: dict) -> str:
+    def generate_financial_plan(self, business_info: dict, model_id: str = None) -> str:
         """
         Generate detailed financial plan based on business information
         
@@ -344,6 +306,7 @@ Question: {working_prompt}"""
                 - business_type: Business type and audience description
                 - financial_situation: Current financial situation
                 - goals: Business goals and challenges
+            model_id: Optional model ID to use
         
         Returns:
             Detailed financial plan formatted for PDF generation
@@ -373,31 +336,6 @@ Question: {working_prompt}"""
             "СТРОГО ЗАПРЕЩЕНО использовать эмодзи или специальные символы (смайлики, иконки и т.д.)!\n"
             "Отвечай на русском языке. Твой ответ будет конвертирован в красивый PDF документ."
         )
-        
-        system_prompt_en = (
-            "You are an experienced financial consultant and business analyst. "
-            "Your task is to create detailed, practical and personalized financial plans for businesses. "
-            "Your recommendations should be:\n"
-            "1. Specific and actionable\n"
-            "2. Based on the provided information\n"
-            "3. Structured using headings in Markdown format (# Heading)\n"
-            "4. Contain specific numbers and deadlines where possible\n"
-            "5. Include risk and opportunity analysis\n\n"
-            "Do not use any special symbols (emojis, icons, etc.)!, as well as currency symbols ($, €, ¥, etc.)\n"
-            "IMPORTANT: Use structure with headings:\n"
-            "- Use # for main sections (for example, # Current situation analysis)\n"
-            "- Use bulleted lists (-, *, •) for enumerations\n"
-            "- Use tables in Markdown format for financial data:(MAXIMUM 1 table for the entire document\n"
-            "  | Indicator | Value |\n"
-            "  |-----------|-------|\n"
-            "  | Revenue   | 100000 |\n\n"
-            "STRICTLY PROHIBITED to put text in table cells, only numbers!(TEXT CAN ONLY BE IN TABLE HEADERS)"
-            "Table cells should contain ONLY numbers, try not to put a lot of data in table cells, it's better to use several tables than to put a lot of data in one cell."
-            "STRICTLY PROHIBITED to use emojis or special symbols (emojis, icons, etc.)!\n"
-            "Respond in English. Your response will be converted into a beautiful PDF document."
-        )
-        
-        system_prompt = self._get_prompt(system_prompt_ru, system_prompt_en)
         
         user_prompt_ru = f"""
 На основе следующей информации о бизнесе составь подробный финансовый план:
@@ -446,65 +384,17 @@ Question: {working_prompt}"""
 
 Будь конкретным, используй числа и примеры, основанные на предоставленной информации.
 """
-
-        user_prompt_en = f"""
-Based on the following business information, create a detailed financial plan:
-
-**Business Information:**
-{business_info.get('business_type', 'Not specified')}
-
-**Current Financial Situation:**
-{business_info.get('financial_situation', 'Not specified')}
-
-**Goals and Objectives:**
-{business_info.get('goals', 'Not specified')}
-
-Create a detailed financial plan with the following sections (use # for headings):
-
-# 1. Current Situation Analysis(do not use a table in this section)
-- Assess the business's strengths and weaknesses
-- Analyze financial condition
-- Identify key opportunities and threats
-
-# 2. Expense Optimization Recommendations(do not use a table in this section)
-- Specific steps to reduce costs
-- Expense prioritization
-- Potential savings
-
-# 3. Revenue Growth Strategies(do not use a table in this section)
-- New revenue sources
-- Pricing optimization
-- Client base expansion
-
-# 4. Action Plan(do not use a table in this section)
-- Specific steps with deadlines
-- Key Performance Indicators (KPI)
-- Resources required for implementation
-
-# 5. Financial Forecast(use 1 table in this section)
-Create a forecast table for 3-6 months in the format:
-| Month | Revenue (rub) | Expenses (rub) | Profit (rub) |
-|-------|---------------|----------------|--------------|
-| 1     | ...           | ...            | ...          |
-
-# 6. Risk Management(do not use a table in this section)
-- Main risks and their probability
-- Risk mitigation strategies
-- Action plan in crisis situations
-
-Be specific, use numbers and examples based on the provided information.
-"""
         
-        user_prompt = self._get_prompt(user_prompt_ru, user_prompt_en)
-        return self.generate_response(user_prompt, system_prompt)
+        return self.generate_response(user_prompt_ru, system_prompt_ru, model_id=model_id)
     
-    def find_clients(self, search_info: dict) -> str:
+    def find_clients(self, search_info: dict, model_id: str = None) -> str:
         """
         Find clients on Russian freelance platforms based on search criteria
         
         Args:
             search_info: Dictionary with search information
                 - description: Description of services offered and target clients
+            model_id: Optional model ID to use
         
         Returns:
             List of 3 relevant client links with descriptions in Russian
@@ -551,13 +441,14 @@ Be specific, use numbers and examples based on the provided information.
         
         return self.generate_response(user_prompt, system_prompt)
     
-    def find_executors(self, search_info: dict) -> str:
+    def find_executors(self, search_info: dict, model_id: str = None) -> str:
         """
         Find executors/freelancers on Russian freelance platforms based on search criteria
         
         Args:
             search_info: Dictionary with search information
                 - description: Description of needed services and executor requirements
+            model_id: Optional model ID to use
         
         Returns:
             List of 3 relevant executor search links with descriptions in Russian
@@ -602,9 +493,9 @@ Be specific, use numbers and examples based on the provided information.
 Предложи три конкретные ссылки с поисковыми запросами, описанием и советами.
 """
         
-        return self.generate_response(user_prompt, system_prompt)
+        return self.generate_response(user_prompt, system_prompt, model_id=model_id)
     
-    def find_similar_users(self, current_user_info: dict, all_users: list) -> str:
+    def find_similar_users(self, current_user_info: dict, all_users: list, model_id: str = None) -> str:
         """
         Find similar users for potential collaboration based on business information
         
@@ -680,7 +571,7 @@ Executors Info: {user.get('executors_info', 'Не указано')}
 Сфокусируйся на взаимовыгодном партнерстве и комплементарных бизнесах.
 """
         
-        return self.generate_response(user_prompt, system_prompt)
+        return self.generate_response(user_prompt, system_prompt, model_id=model_id)
 
 
     def validate_business_legality(self, business_info: dict) -> dict:

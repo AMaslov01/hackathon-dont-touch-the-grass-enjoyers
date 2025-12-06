@@ -10,6 +10,13 @@ from psycopg2.pool import SimpleConnectionPool
 from config import Config
 from constants import TOKEN_CONFIG
 
+try:
+    from model_manager import get_default_model_id
+except ImportError:
+    # Fallback если model_manager недоступен
+    def get_default_model_id(ai_mode: str = "local") -> str:
+        return "llama3-finance" if ai_mode == "local" else "glm-4.5-air"
+
 logger = logging.getLogger(__name__)
 
 
@@ -445,24 +452,28 @@ class UserRepository:
 
     def create_user(self, user_id: int, username: str = None,
                    first_name: str = None, last_name: str = None) -> dict:
-        """Create a new user"""
+        """Create a new user with default model based on AI_MODE"""
         conn = self.db.get_connection()
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                # Устанавливаем дефолтную модель в зависимости от режима работы
+                default_model = get_default_model_id(Config.AI_MODE)
+                
                 cursor.execute("""
                     INSERT INTO users (user_id, username, first_name, last_name, 
-                                     tokens, max_tokens, last_token_refresh)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                     tokens, max_tokens, last_token_refresh, current_model)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING *
                 """, (
                     user_id, username, first_name, last_name,
                     TOKEN_CONFIG['initial_tokens'],
                     TOKEN_CONFIG['max_tokens'],
-                    datetime.now()
+                    datetime.now(),
+                    default_model
                 ))
                 conn.commit()
                 result = cursor.fetchone()
-                logger.info(f"Created new user: {user_id}")
+                logger.info(f"Created new user: {user_id} with default model: {default_model}")
                 return dict(result)
         except Exception as e:
             conn.rollback()
@@ -910,6 +921,157 @@ class UserRepository:
         except Exception as e:
             logger.error(f"Failed to get users with business info: {e}")
             return []
+        finally:
+            self.db.return_connection(conn)
+    
+    # Model management methods
+    
+    def get_user_model(self, user_id: int, ai_mode: str = None) -> Optional[str]:
+        """
+        Get user's selected AI model based on current AI_MODE
+        
+        Args:
+            user_id: Telegram user ID
+            ai_mode: 'local' or 'openrouter' (defaults to Config.AI_MODE)
+        
+        Returns:
+            Model ID string or None
+        """
+        from config import Config
+        if ai_mode is None:
+            ai_mode = Config.AI_MODE
+            
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                # Choose field based on AI mode
+                if ai_mode == 'local':
+                    field = 'current_local_model'
+                else:
+                    field = 'current_cloud_model'
+                
+                cursor.execute(
+                    f"SELECT {field} FROM users WHERE user_id = %s",
+                    (user_id,)
+                )
+                result = cursor.fetchone()
+                return result[field] if result else None
+        except Exception as e:
+            logger.error(f"Failed to get user model for {user_id}: {e}")
+            # Fallback to old column for backwards compatibility
+            try:
+                with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                    cursor.execute(
+                        "SELECT current_model FROM users WHERE user_id = %s",
+                        (user_id,)
+                    )
+                    result = cursor.fetchone()
+                    return result['current_model'] if result else None
+            except:
+                return None
+        finally:
+            self.db.return_connection(conn)
+    
+    def set_user_model(self, user_id: int, model_id: str, ai_mode: str = None) -> bool:
+        """
+        Set user's AI model based on model type
+        
+        Args:
+            user_id: Telegram user ID
+            model_id: Model ID to set
+            ai_mode: 'local' or 'openrouter' (defaults to Config.AI_MODE)
+        
+        Returns:
+            True if successful
+        """
+        from config import Config
+        from model_manager import get_model_config, ModelType
+        
+        if ai_mode is None:
+            ai_mode = Config.AI_MODE
+        
+        # Determine which field to update based on model type
+        config = get_model_config(model_id)
+        if config:
+            if config.model_type == ModelType.LOCAL:
+                field = 'current_local_model'
+            else:
+                field = 'current_cloud_model'
+        else:
+            # Fallback: use AI_MODE to determine field
+            field = 'current_local_model' if ai_mode == 'local' else 'current_cloud_model'
+        
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    f"UPDATE users SET {field} = %s WHERE user_id = %s",
+                    (model_id, user_id)
+                )
+                conn.commit()
+                logger.info(f"Set {field} to {model_id} for user {user_id}")
+                return True
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to set user model for {user_id}: {e}")
+            return False
+        finally:
+            self.db.return_connection(conn)
+    
+    def get_user_premium_expires(self, user_id: int) -> Optional[datetime]:
+        """Get user's premium expiration date"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    "SELECT premium_expires_at FROM users WHERE user_id = %s",
+                    (user_id,)
+                )
+                result = cursor.fetchone()
+                return result['premium_expires_at'] if result else None
+        except Exception as e:
+            logger.error(f"Failed to get premium expires for {user_id}: {e}")
+            return None
+        finally:
+            self.db.return_connection(conn)
+    
+    def purchase_premium(self, user_id: int, tokens_cost: int, expires_at: datetime, days_purchased: int = 1) -> bool:
+        """Purchase premium access"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor() as cursor:
+                # Deduct tokens and set premium expiration
+                cursor.execute(
+                    """
+                    UPDATE users 
+                    SET tokens = tokens - %s,
+                        premium_expires_at = %s
+                    WHERE user_id = %s AND tokens >= %s
+                    """,
+                    (tokens_cost, expires_at, user_id, tokens_cost)
+                )
+                
+                if cursor.rowcount == 0:
+                    conn.rollback()
+                    return False
+                
+                # Record purchase in premium_purchases table
+                cursor.execute(
+                    """
+                    INSERT INTO premium_purchases 
+                    (user_id, model_id, tokens_spent, days_purchased, expires_at)
+                    VALUES (%s, %s, %s, %s, %s)
+                    """,
+                    (user_id, 'premium_access', tokens_cost, days_purchased, expires_at)
+                )
+                
+                conn.commit()
+                logger.info(f"Premium purchased for user {user_id}: {tokens_cost} tokens, expires {expires_at}")
+                return True
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to purchase premium for {user_id}: {e}")
+            return False
         finally:
             self.db.return_connection(conn)
 

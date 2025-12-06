@@ -27,7 +27,13 @@ from ai_client import ai_client
 from user_manager import user_manager
 from constants import MESSAGES
 from constants import COMMANDS_COSTS
-from pdf_generator import pdf_generator, chat_history_pdf
+from constants import TOKEN_CONFIG
+from pdf_generator_simple import pdf_generator, chat_history_pdf
+from model_manager import (
+    get_model_config, get_free_models, get_premium_models,
+    get_local_models, get_openrouter_models,
+    ModelTier, ModelType
+)
 
 # Configure logging
 logging.basicConfig(
@@ -63,6 +69,113 @@ def escape_markdown(text: str) -> str:
 
     return text
 
+
+def fix_emoji_at_start(text: str) -> str:
+    """
+    Fix AI responses that start with emoji - Telegram Markdown parser breaks on them.
+    
+    Telegram's Markdown parser can fail when a message starts with an emoji.
+    This function detects and fixes such cases by adding a space before the emoji.
+    
+    Args:
+        text: The AI response text
+        
+    Returns:
+        Fixed text that won't break Telegram's Markdown parser
+    """
+    if not text:
+        return text
+    
+    # Check if text starts with emoji (emoji are typically > 1 byte per char in UTF-8)
+    first_char = text[0] if text else ''
+    
+    # Simple emoji detection: check if first character is in common emoji ranges
+    # This covers most common emoji without heavy regex
+    if first_char and ord(first_char) > 0x1F000:
+        # Add a space before the emoji to prevent Markdown parser issues
+        return ' ' + text
+    
+    # Check for multi-byte emoji sequences (like flags, skin tones, etc)
+    if len(text) > 1 and ord(first_char) >= 0x200D:  # Zero-width joiner used in compound emoji
+        return ' ' + text
+    
+    return text
+
+
+def validate_and_fix_user_model(user_id: int) -> str:
+    """
+    Validate user's current model and auto-switch to free model if premium expired.
+    
+    This function checks if the user has access to their currently selected model.
+    If the user's premium has expired and they're using a premium model,
+    it automatically switches them to the default free model AND SAVES TO DATABASE.
+    
+    Args:
+        user_id: Telegram user ID
+        
+    Returns:
+        The model ID the user should use (may be different from their saved model)
+    """
+    from model_manager import can_user_access_model, get_model_config, get_default_model_id, ModelTier
+    from config import Config
+    
+    # Get user's current model and premium status
+    current_model = user_manager.get_user_model(user_id)
+    premium_expires = user_manager.get_user_premium_expires(user_id)
+    
+    # Check if user has access to their current model
+    if can_user_access_model(current_model, premium_expires):
+        # All good - user has access
+        return current_model
+    
+    # User doesn't have access (premium expired) - switch to default free model
+    logger.warning(f" User {user_id} lost access to model '{current_model}' (premium expired)")
+    
+    default_model = get_default_model_id(Config.AI_MODE)
+    
+    # Auto-switch to free model and SAVE TO DATABASE
+    logger.info(f"Switching user {user_id} to free model '{default_model}'...")
+    success = user_manager.set_user_model(user_id, default_model)
+    
+    if success:
+        logger.info(f"User {user_id} model updated in DATABASE: {current_model} -> {default_model}")
+        return default_model
+    else:
+        logger.error(f"FAILED to update user {user_id} model in DATABASE! Using default anyway for safety.")
+        # Return default anyway to prevent using premium model without access
+        return default_model
+
+
+def format_models_list(models: dict, show_price: bool = False) -> str:
+    """
+    Format a list of models for display in Telegram message
+    
+    Args:
+        models: Dictionary of model configs
+        show_price: Whether to show premium price
+        
+    Returns:
+        Formatted string with model list
+    """
+    from constants import TOKEN_CONFIG
+    
+    result = ""
+    for model_id, config in models.items():
+        # Model names and descriptions are developer-defined content, not user input
+        # So we don't need to escape them (they already have proper markdown)
+        result += f"*ID:* `{model_id}`\n"
+        result += f"*Название:* {config.name}\n"
+        result += f"{config.description}\n"
+        
+        if show_price:
+            price = TOKEN_CONFIG['premium_price_per_day']
+            result += f"💰 Цена: {price} токенов/день\n"
+        
+        result += "\n"
+    
+    return result
+
+
 # Finance conversation states
 CHECKING_EXISTING, QUESTION_1, QUESTION_2, QUESTION_3, QUESTION_4 = range(5)
 
@@ -93,7 +206,7 @@ REVIEW_TASK_ID, REVIEW_TASK_DECISION = range(23, 25)
 FIRE_EMPLOYEE_USERNAME = range(25, 26)
 
 # Swipe employees states
-SWIPE_EMPLOYEES_VIEWING = range(26, 27)
+FIND_EMPLOYEES_VIEWING = range(26, 27)
 
 # Create business conversation states (similar to finance)
 CREATE_BUSINESS_Q1, CREATE_BUSINESS_Q2, CREATE_BUSINESS_Q3, CREATE_BUSINESS_Q4 = range(27, 31)
@@ -103,6 +216,12 @@ SWITCH_BUSINESS_ID = range(31, 32)
 
 # Delete business conversation states
 DELETE_BUSINESS_ID, DELETE_BUSINESS_CONFIRM = range(32, 34)
+
+# Switch model conversation states
+SWITCH_MODEL_ID = range(34, 35)
+
+# Buy premium conversation states
+BUY_PREMIUM_DAYS, BUY_PREMIUM_CONFIRM = range(35, 37)
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -373,7 +492,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         # Generate AI response
         try:
-            ai_response = ai_client.generate_response(user_message)
+            # Get user's selected model (with automatic premium expiry check)
+            user_model = validate_and_fix_user_model(user_id)
+            
+            ai_response = ai_client.generate_response(user_message, model_id=user_model)
+            
+            # Fix emoji at start (breaks Telegram Markdown parser)
+            ai_response = fix_emoji_at_start(ai_response)
 
             # Truncate if too long (Telegram limit is 4096 chars)
             if len(ai_response) > 4000:
@@ -381,12 +506,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
             # Send response with Markdown formatting
             # Note: AI responses are not escaped as they contain intentional markdown formatting
+            # Don't add emoji at start - it breaks Telegram Markdown parser!
             try:
-                await thinking_msg.edit_text(f"💡 {ai_response}", parse_mode='Markdown')
+                await thinking_msg.edit_text(ai_response, parse_mode='Markdown')
             except BadRequest as e:
                 # If Markdown parsing fails, send as plain text
                 logger.warning(f"Markdown parsing failed for user {user_id}, sending as plain text: {e}")
-                await thinking_msg.edit_text(f"💡 {ai_response}")
+                await thinking_msg.edit_text(ai_response)
 
             # Log usage
             user_manager.log_usage(user_id, user_message, ai_response)
@@ -441,7 +567,7 @@ async def finance_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         if not active_business:
             await update.message.reply_text(
                 "У вас нет активного бизнеса. ❌\n\n"
-                "Создайте бизнес с помощью /create_business",
+                "Создайте бизнес с помощью /create\\_business",
                 parse_mode='Markdown'
             )
             return ConversationHandler.END
@@ -575,8 +701,10 @@ async def finance_question_4(update: Update, context: ContextTypes.DEFAULT_TYPE)
         # Check if business is legal
         if not validation_result['is_valid']:
             logger.warning(f"Business validation failed for user {user_id}")
+            # Fix emoji at start (breaks Telegram Markdown parser)
+            validation_message = fix_emoji_at_start(validation_result['message'])
             await update.message.reply_text(
-                f"❌ {validation_result['message']}",
+                f"❌ {validation_message}",
                 parse_mode='Markdown'
             )
             return ConversationHandler.END
@@ -664,8 +792,12 @@ async def finance_generate_plan(update: Update, context: ContextTypes.DEFAULT_TY
         # Update status message
         await thinking_msg.edit_text("🤖 Генерирую финансовый план с помощью AI...(это может занять до 5 минут)")
 
-        # Generate financial plan using AI
-        financial_plan = ai_client.generate_financial_plan(business_info)
+        # Generate financial plan using AI with user's selected model (with auto premium check)
+        user_model = validate_and_fix_user_model(user_id)
+        financial_plan = ai_client.generate_financial_plan(business_info, model_id=user_model)
+        
+        # Fix emoji at start (breaks Telegram Markdown parser)
+        financial_plan = fix_emoji_at_start(financial_plan)
 
         logger.info(f"AI financial plan generated for user {user_id}, length: {len(financial_plan)}")
 
@@ -686,7 +818,7 @@ async def finance_generate_plan(update: Update, context: ContextTypes.DEFAULT_TY
             logger.error(f"PDF generation error for user {user_id}: {pdf_error}", exc_info=True)
             # Fallback to text message if PDF generation fails
             await thinking_msg.edit_text(
-                "⚠️ Не удалось создать PDF. Отправляю текстовую версию..."
+                "Не удалось создать PDF. Отправляю текстовую версию... ⚠️"
             )
 
             # Send text version
@@ -758,7 +890,7 @@ async def finance_generate_plan(update: Update, context: ContextTypes.DEFAULT_TY
         except Exception as send_error:
             logger.error(f"Error sending PDF to user {user_id}: {send_error}")
             await thinking_msg.edit_text(
-                "❌ Произошла ошибка при отправке PDF файла. Попробуйте позже."
+                "Произошла ошибка при отправке PDF файла. Попробуйте позже. ❌"
             )
 
         # Log usage
@@ -909,8 +1041,10 @@ async def create_business_q4(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         if not validation_result['is_valid']:
             logger.warning(f"Business validation failed for user {user_id}")
+            # Fix emoji at start (breaks Telegram Markdown parser)
+            validation_message = fix_emoji_at_start(validation_result['message'])
             await update.message.reply_text(
-                f"❌ {validation_result['message']}",
+                f"❌ {validation_message}",
                 parse_mode='Markdown'
             )
             context.user_data.clear()
@@ -952,7 +1086,7 @@ async def create_business_q4(update: Update, context: ContextTypes.DEFAULT_TYPE)
             f"✅ *Бизнес '{business_name}' успешно создан!*\n\n"
             f"Этот бизнес автоматически установлен как активный.\n"
             f"Используйте /switch_businesses для смены активного бизнеса.\n"
-            f"Используйте /delete_business для удаления бизнеса.",
+            f"Используйте /delete\\_business для удаления бизнеса.",
             parse_mode='HTML'
         )
 
@@ -967,7 +1101,7 @@ async def create_business_q4(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def create_business_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handle cancellation of create business conversation"""
-    await update.message.reply_text("❌ Создание бизнеса отменено")
+    await update.message.reply_text("Создание бизнеса отменено ❌")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -992,7 +1126,7 @@ async def switch_businesses_start(update: Update, context: ContextTypes.DEFAULT_
         if not businesses:
             await update.message.reply_text(
                 "У вас нет бизнесов. ❌\n\n"
-                "Создайте бизнес с помощью /create_business",
+                "Создайте бизнес с помощью /create\\_business",
                 parse_mode='HTML'
             )
             return ConversationHandler.END
@@ -1000,7 +1134,7 @@ async def switch_businesses_start(update: Update, context: ContextTypes.DEFAULT_
         if len(businesses) == 1:
             await update.message.reply_text(
                 "ℹ️ У вас только один бизнес.\n\n"
-                "Создайте ещё один с помощью /create_business",
+                "Создайте ещё один с помощью /create\\_business",
                 parse_mode='HTML'
             )
             return ConversationHandler.END
@@ -1044,7 +1178,7 @@ async def switch_businesses_id_handler(update: Update, context: ContextTypes.DEF
                 parse_mode='Markdown'
             )
         else:
-            await update.message.reply_text(f"❌ {message}", parse_mode='Markdown')
+            await update.message.reply_text(f"{message} ❌", parse_mode='Markdown')
 
         logger.info(f"User {user_id} tried to switch to business {business_id}: {success}")
 
@@ -1063,7 +1197,7 @@ async def switch_businesses_id_handler(update: Update, context: ContextTypes.DEF
 
 async def switch_businesses_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel switch businesses conversation"""
-    await update.message.reply_text("❌ Смена активного бизнеса отменена")
+    await update.message.reply_text("Смена активного бизнеса отменена ❌")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -1187,7 +1321,7 @@ async def delete_business_confirm_handler(update: Update, context: ContextTypes.
                 parse_mode='Markdown'
             )
         else:
-            await update.message.reply_text(f"❌ {message}", parse_mode='Markdown')
+            await update.message.reply_text(f"{message} ❌", parse_mode='Markdown')
 
         logger.info(f"User {user_id} tried to delete business {business_id}: {success}")
 
@@ -1201,7 +1335,7 @@ async def delete_business_confirm_handler(update: Update, context: ContextTypes.
 
 async def delete_business_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel delete business conversation"""
-    await update.message.reply_text("❌ Удаление бизнеса отменено")
+    await update.message.reply_text("Удаление бизнеса отменено ❌")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -1224,7 +1358,7 @@ async def clients_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         if not user_manager.has_active_business(user_id):
             await update.message.reply_text(
                 "У вас нет активного бизнеса. ❌\n\n"
-                "Создайте бизнес с помощью /create_business",
+                "Создайте бизнес с помощью /create\\_business",
                 parse_mode='Markdown'
             )
             return ConversationHandler.END
@@ -1348,8 +1482,12 @@ async def clients_search(update: Update, context: ContextTypes.DEFAULT_TYPE,
             await thinking_msg.edit_text(MESSAGES['clients_no_info'])
             return ConversationHandler.END
 
-        # Search for clients using AI
-        search_results = ai_client.find_clients(workers_info)
+        # Search for clients using AI with user's selected model (with auto premium check)
+        user_model = validate_and_fix_user_model(user_id)
+        search_results = ai_client.find_clients(workers_info, model_id=user_model)
+        
+        # Fix emoji at start (breaks Telegram Markdown parser)
+        search_results = fix_emoji_at_start(search_results)
 
         logger.info(f"Clients search results generated for user {user_id}, length: {len(search_results)}")
 
@@ -1416,7 +1554,7 @@ async def executors_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if not user_manager.has_active_business(user_id):
             await update.message.reply_text(
                 "У вас нет активного бизнеса. ❌\n\n"
-                "Создайте бизнес с помощью /create_business",
+                "Создайте бизнес с помощью /create\\_business",
                 parse_mode='Markdown'
             )
             return ConversationHandler.END
@@ -1540,8 +1678,12 @@ async def executors_search(update: Update, context: ContextTypes.DEFAULT_TYPE,
             await thinking_msg.edit_text(MESSAGES['executors_no_info'])
             return ConversationHandler.END
 
-        # Search for executors using AI
-        search_results = ai_client.find_executors(executors_info)
+        # Search for executors using AI with user's selected model (with auto premium check)
+        user_model = validate_and_fix_user_model(user_id)
+        search_results = ai_client.find_executors(executors_info, model_id=user_model)
+        
+        # Fix emoji at start (breaks Telegram Markdown parser)
+        search_results = fix_emoji_at_start(search_results)
 
         logger.info(f"Executors search results generated for user {user_id}, length: {len(search_results)}")
 
@@ -1699,7 +1841,7 @@ async def add_employee_process(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def add_employee_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel add employee conversation"""
-    await update.message.reply_text("❌ Приглашение сотрудника отменено")
+    await update.message.reply_text("Приглашение сотрудника отменено ❌")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -1799,7 +1941,7 @@ async def fire_employee_process(update: Update, context: ContextTypes.DEFAULT_TY
                 logger.error(f"Failed to notify fired employee {target_user_id}: {e}")
         else:
             escaped_message = escape_markdown(message)
-            await update.message.reply_text(f"❌ {escaped_message}", parse_mode='Markdown')
+            await update.message.reply_text(f"{escaped_message} ❌", parse_mode='Markdown')
         
         logger.info(f"User {user_id} tried to fire {target_username}: {success}")
         
@@ -1815,7 +1957,7 @@ async def fire_employee_process(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def fire_employee_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel fire employee conversation"""
-    await update.message.reply_text("❌ Увольнение сотрудника отменено")
+    await update.message.reply_text("Увольнение сотрудника отменено ❌")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -2049,7 +2191,7 @@ async def accept_invitation_process(update: Update, context: ContextTypes.DEFAUL
 
 async def accept_invitation_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel accept invitation conversation"""
-    await update.message.reply_text("❌ Принятие приглашения отменено")
+    await update.message.reply_text("Принятие приглашения отменено ❌")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -2137,7 +2279,7 @@ async def reject_invitation_process(update: Update, context: ContextTypes.DEFAUL
 
 async def reject_invitation_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel reject invitation conversation"""
-    await update.message.reply_text("❌ Отклонение приглашения отменено")
+    await update.message.reply_text("Отклонение приглашения отменено ❌")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -2219,7 +2361,7 @@ async def create_task_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         if not user_manager.has_active_business(user_id):
             await update.message.reply_text(
                 "У вас нет активного бизнеса. ❌\n\n"
-                "Создайте бизнес с помощью /create_business",
+                "Создайте бизнес с помощью /create\\_business",
                 parse_mode='Markdown'
             )
             return ConversationHandler.END
@@ -2369,7 +2511,7 @@ async def task_priority_handler(update: Update, context: ContextTypes.DEFAULT_TY
         )
 
         if not success:
-            await thinking_msg.edit_text(f"❌ {message}")
+            await thinking_msg.edit_text(f"{message} ❌")
             context.user_data.clear()
             return ConversationHandler.END
 
@@ -2413,7 +2555,7 @@ async def task_priority_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def task_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel task creation"""
-    await update.message.reply_text("❌ Создание задачи отменено")
+    await update.message.reply_text("Создание задачи отменено ❌")
     return ConversationHandler.END
 
 
@@ -2471,7 +2613,7 @@ async def available_tasks_command(update: Update, context: ContextTypes.DEFAULT_
 
 
 async def my_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle the /my_tasks command"""
+    """Handle the /my\\_tasks command"""
     user_id = update.effective_user.id
 
     try:
@@ -2617,7 +2759,7 @@ async def take_task_process(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 parse_mode='Markdown'
             )
         else:
-            await update.message.reply_text(f"❌ {message}", parse_mode='Markdown')
+            await update.message.reply_text(f"{message} ❌", parse_mode='Markdown')
 
         logger.info(f"User {user_id} tried to take task {task_id}: {success}")
 
@@ -2633,7 +2775,7 @@ async def take_task_process(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 async def take_task_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel take task conversation"""
-    await update.message.reply_text("❌ Взятие задачи отменено")
+    await update.message.reply_text("Взятие задачи отменено ❌")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -2647,7 +2789,7 @@ async def assign_task_start(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         if not user_manager.has_active_business(user_id):
             await update.message.reply_text(
                 "У вас нет активного бизнеса. ❌\n\n"
-                "Создайте бизнес с помощью /create_business",
+                "Создайте бизнес с помощью /create\\_business",
                 parse_mode='Markdown'
             )
             return ConversationHandler.END
@@ -2723,13 +2865,13 @@ async def assign_task_process(update: Update, context: ContextTypes.DEFAULT_TYPE
                             text=f"📋 *Новая задача назначена вам!*\n\n"
                                  f"*{escaped_title}*\n"
                                  f"{escaped_desc}\n\n"
-                                 f"Посмотреть свои задачи: `/my_tasks`",
+                                 f"Посмотреть свои задачи: `/my\\_tasks`",
                             parse_mode='Markdown'
                         )
                 except Exception as e:
                     logger.warning(f"Failed to notify employee {employee_id}: {e}")
         else:
-            await update.message.reply_text(f"❌ {message}", parse_mode='Markdown')
+            await update.message.reply_text(f"{message} ❌", parse_mode='Markdown')
 
         logger.info(f"User {user_id} tried to assign task {task_id} to @{employee_username}: {success}")
 
@@ -2745,7 +2887,7 @@ async def assign_task_process(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def assign_task_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel assign task conversation"""
-    await update.message.reply_text("❌ Назначение задачи отменено")
+    await update.message.reply_text("Назначение задачи отменено ❌")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -2862,7 +3004,7 @@ async def complete_task_process(update: Update, context: ContextTypes.DEFAULT_TY
                     except Exception as e:
                         logger.error(f"Failed to notify owner {owner_id} about submitted task {task_id}: {e}")
         else:
-            await update.message.reply_text(f"❌ {message}", parse_mode='Markdown')
+            await update.message.reply_text(f"{message} ❌", parse_mode='Markdown')
 
         logger.info(f"User {user_id} tried to complete task {task_id}: {success}")
 
@@ -2878,7 +3020,7 @@ async def complete_task_process(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def complete_task_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel complete task conversation"""
-    await update.message.reply_text("❌ Завершение задачи отменено")
+    await update.message.reply_text("Завершение задачи отменено ❌")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -2959,7 +3101,7 @@ async def abandon_task_process(update: Update, context: ContextTypes.DEFAULT_TYP
                 parse_mode='Markdown'
             )
         else:
-            await update.message.reply_text(f"❌ {message}", parse_mode='Markdown')
+            await update.message.reply_text(f"{message} ❌", parse_mode='Markdown')
 
         logger.info(f"User {user_id} tried to abandon task {task_id}: {success}")
 
@@ -2974,7 +3116,7 @@ async def abandon_task_process(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def abandon_task_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel abandon task conversation"""
-    await update.message.reply_text("❌ Отказ от задачи отменен")
+    await update.message.reply_text("Отказ от задачи отменен ❌")
     context.user_data.clear()
     return ConversationHandler.END
 # END of abandon copy-paste
@@ -2988,7 +3130,7 @@ async def all_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         if not user_manager.has_active_business(user_id):
             await update.message.reply_text(
                 "У вас нет активного бизнеса. ❌\n\n"
-                "Создайте бизнес с помощью /create_business",
+                "Создайте бизнес с помощью /create\\_business",
                 parse_mode='Markdown'
             )
             return
@@ -3031,7 +3173,7 @@ async def all_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             tasks_text += "*🚫 Отказанные задачи:*\n"
             for task in abandoned:
                 abandoned_by = f"@{task['abandoned_by_username']}" if task.get('abandoned_by_username') else task.get('abandoned_by_name', 'Unknown')
-                abandoned_at = task['abandoned_at'].strftime("%d.%m.%Y %H:%M") if task.get('abandoned_at') else ""
+                abandoned_at = task['abandoned_at'].strftime("%d.%m.%Y %H:%M").replace(':', '\\:') if task.get('abandoned_at') else ""
                 escaped_title = escape_markdown(task['title'])
                 escaped_abandoned_by = escape_markdown(abandoned_by)
                 if abandoned_at:
@@ -3041,7 +3183,7 @@ async def all_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                     tasks_text += f"  • ID {task['id']}: {escaped_title} (отказана: {escaped_abandoned_by})\n"
             tasks_text += "\n"
             tasks_text += "💡 *Отказанные задачи можно назначить другому сотруднику:*\n"
-            tasks_text += "Используйте команду `/assign_task `\n\n"
+            tasks_text += "Используйте команду `/assign\\_task `\n\n"
         if completed:
             tasks_text += f"*✅ Выполнено задач: {len(completed)}*\n"
 
@@ -3065,7 +3207,7 @@ async def submitted_tasks_command(update: Update, context: ContextTypes.DEFAULT_
         if not user_manager.has_active_business(user_id):
             await update.message.reply_text(
                 "У вас нет активного бизнеса. ❌\n\n"
-                "Создайте бизнес с помощью /create_business",
+                "Создайте бизнес с помощью /create\\_business",
                 parse_mode='Markdown'
             )
             return
@@ -3121,7 +3263,7 @@ async def review_task_start(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         if not user_manager.has_active_business(user_id):
             await update.message.reply_text(
                 "У вас нет активного бизнеса. ❌\n\n"
-                "Создайте бизнес с помощью /create_business",
+                "Создайте бизнес с помощью /create\\_business",
                 parse_mode='Markdown'
             )
             return ConversationHandler.END
@@ -3291,7 +3433,7 @@ async def review_task_decision_handler(update: Update, context: ContextTypes.DEF
                         logger.error(f"Failed to notify employee {employee_id} about rejected task {task_id}: {e}")
             else:
                 escaped_message = escape_markdown(message)
-                await update.message.reply_text(f"❌ {escaped_message}", parse_mode='Markdown')
+                await update.message.reply_text(f"{escaped_message} ❌", parse_mode='Markdown')
             
             context.user_data.clear()
             return ConversationHandler.END
@@ -3337,7 +3479,7 @@ async def review_task_decision_handler(update: Update, context: ContextTypes.DEF
                             logger.error(f"Failed to notify employee {employee_id} about task revision {task_id}: {e}")
                 else:
                     escaped_message = escape_markdown(message)
-                    await update.message.reply_text(f"❌ {escaped_message}", parse_mode='Markdown')
+                    await update.message.reply_text(f"{escaped_message} ❌", parse_mode='Markdown')
                 
                 context.user_data.clear()
                 return ConversationHandler.END
@@ -3387,7 +3529,7 @@ async def review_task_decision_handler(update: Update, context: ContextTypes.DEF
                         logger.error(f"Failed to notify employee {employee_id} about accepted task {task_id}: {e}")
             else:
                 escaped_message = escape_markdown(message)
-                await update.message.reply_text(f"❌ {escaped_message}", parse_mode='Markdown')
+                await update.message.reply_text(f"{escaped_message} ❌", parse_mode='Markdown')
             
             context.user_data.clear()
             return ConversationHandler.END
@@ -3404,7 +3546,7 @@ async def review_task_decision_handler(update: Update, context: ContextTypes.DEF
     except Exception as e:
         logger.error(f"Error in review_task_decision_handler for user {user_id}: {e}", exc_info=True)
         await update.message.reply_text(
-            "Произошла ошибка при обработке. ❌ Попробуйте снова с команды /review_task",
+            "Произошла ошибка при обработке. ❌ Попробуйте снова с команды /review\\_task",
             parse_mode='Markdown'
         )
         context.user_data.clear()
@@ -3413,7 +3555,7 @@ async def review_task_decision_handler(update: Update, context: ContextTypes.DEF
 
 async def review_task_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel review task conversation"""
-    await update.message.reply_text("❌ Проверка задачи отменена")
+    await update.message.reply_text("Проверка задачи отменена ❌")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -3486,12 +3628,13 @@ async def export_history_command(update: Update, context: ContextTypes.DEFAULT_T
                 logger.info(f"Opening PDF file: {pdf_path}")
                 with open(pdf_path, 'rb') as pdf_file:
                     logger.info(f"Sending PDF document to user {user_id}")
+                    date_str = datetime.now().strftime('%d.%m.%Y %H:%M').replace(':', '\\:')
                     await update.message.reply_document(
                         document=pdf_file,
                         filename=f"История_чата_{user_name}.pdf",
                         caption=f"📜 *История общения с ботом*\n\n"
                                f"Экспортировано сообщений: {len(chat_history)}\n"
-                               f"Дата создания: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
+                               f"Дата создания: {date_str}",
                         parse_mode='Markdown'
                     )
                 
@@ -3555,7 +3698,7 @@ async def find_similar_command(update: Update, context: ContextTypes.DEFAULT_TYP
         if not user_manager.has_active_business(user_id):
             await update.message.reply_text(
                 "У вас нет активного бизнеса. ❌\n\n"
-                "Создайте бизнес с помощью /create_business",
+                "Создайте бизнес с помощью /create\\_business",
                 parse_mode='Markdown'
             )
             return
@@ -3633,8 +3776,12 @@ async def find_similar_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
             logger.info(f"Finding similar users for {user_id} among {len(parsed_users)} candidates")
 
-            # Find similar users using AI
-            search_results = ai_client.find_similar_users(current_user_info, parsed_users)
+            # Find similar users using AI with user's selected model (with auto premium check)
+            user_model = validate_and_fix_user_model(user_id)
+            search_results = ai_client.find_similar_users(current_user_info, parsed_users, model_id=user_model)
+            
+            # Fix emoji at start (breaks Telegram Markdown parser)
+            search_results = fix_emoji_at_start(search_results)
 
             logger.info(f"Similar users results generated for user {user_id}, length: {len(search_results)}")
 
@@ -3672,7 +3819,7 @@ async def find_similar_command(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text(MESSAGES['similar_error'])
 
 
-async def swipe_employees_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def find_employees_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start the swipe employees feature"""
     user_id = update.effective_user.id
 
@@ -3729,7 +3876,7 @@ async def swipe_employees_start(update: Update, context: ContextTypes.DEFAULT_TY
         return await show_next_candidate(update, context)
 
     except Exception as e:
-        logger.error(f"Error in swipe_employees_start for user {user_id}: {e}")
+        logger.error(f"Error in find_employees_start for user {user_id}: {e}")
         await update.message.reply_text(MESSAGES['database_error'])
         return ConversationHandler.END
 
@@ -3758,6 +3905,9 @@ async def show_next_candidate(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # Format rating
     rating_text = f"⭐ Рейтинг: {rating}" if rating is not None else "⭐ Рейтинг: нет опыта"
+
+    # Fix emoji at start for AI-generated reasoning (breaks Telegram Markdown parser)
+    reasoning = fix_emoji_at_start(reasoning)
 
     # Escape markdown in user input
     escaped_username = escape_markdown(f"@{username}")
@@ -3801,7 +3951,7 @@ async def show_next_candidate(update: Update, context: ContextTypes.DEFAULT_TYPE
             reply_markup=reply_markup
         )
 
-    return SWIPE_EMPLOYEES_VIEWING
+    return FIND_EMPLOYEES_VIEWING
 
 
 async def swipe_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -3892,7 +4042,7 @@ async def swipe_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             else:
                 logger.warning(f"Failed to invite candidate {candidate_username}: {message}")
                 await query.answer("❌ Ошибка")
-                await query.edit_message_text(f"❌ {message}")
+                await query.edit_message_text(f"{message} ❌")
                 return ConversationHandler.END
 
         elif data.startswith("swipe_reject_"):
@@ -3971,7 +4121,7 @@ async def swipe_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         
         logger.info(f"Successfully sent message {sent_message.message_id} to user {user_id}")
 
-        return SWIPE_EMPLOYEES_VIEWING
+        return FIND_EMPLOYEES_VIEWING
 
     except Exception as e:
         logger.error(f"Error in swipe_callback_handler for user {user_id}: {e}", exc_info=True)
@@ -3987,9 +4137,428 @@ async def swipe_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         return ConversationHandler.END
 
 
-async def swipe_employees_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def find_employees_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel swipe employees"""
-    await update.message.reply_text("❌ Просмотр кандидатов отменен")
+    await update.message.reply_text("Просмотр кандидатов отменен ❌")
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
+# Model management command handlers
+async def switch_model_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Start the switch model conversation"""
+    user_id = update.effective_user.id
+
+    # Check if user has filled their info
+    if not await check_user_info_filled(update, context):
+        return ConversationHandler.END
+
+    try:
+        # Ensure user exists in database
+        user_manager.get_or_create_user(
+            user_id=user_id,
+            username=update.effective_user.username,
+            first_name=update.effective_user.first_name,
+            last_name=update.effective_user.last_name
+        )
+
+        # Get current user model and premium status
+        current_model_id = user_manager.get_user_model(user_id)
+        premium_expires = user_manager.get_user_premium_expires(user_id)
+
+        # Show current model
+        current_config = get_model_config(current_model_id)
+        if current_config:
+            # Model names are developer-defined, don't escape them
+            current_model_text = f"*Ваша текущая модель:* {current_config.name}\n\n"
+        else:
+            current_model_text = ""
+
+        # Filter models based on AI_MODE
+        if Config.AI_MODE == 'local':
+            # Show only local models
+            free_models = {k: v for k, v in get_free_models().items() if v.model_type == ModelType.LOCAL}
+            premium_models = {k: v for k, v in get_premium_models().items() if v.model_type == ModelType.LOCAL}
+            mode_text = "*Режим:* Локальные модели 💻"
+        else:
+            # Show only OpenRouter models
+            free_models = {k: v for k, v in get_free_models().items() if v.model_type == ModelType.OPENROUTER}
+            premium_models = {k: v for k, v in get_premium_models().items() if v.model_type == ModelType.OPENROUTER}
+            mode_text = "*Режим:* Облачные модели (OpenRouter) ☁️"
+
+        # Build message
+        message_text = f"*Переключение модели* 🤖\n\n{current_model_text}{mode_text}\n\n"
+
+        # Show free models
+        if free_models:
+            message_text += "*БЕСПЛАТНЫЕ МОДЕЛИ:* 🆓\n\n"
+            message_text += format_models_list(free_models, show_price=False)
+            message_text += "\n\n"
+
+        # Show premium models
+        if premium_models:
+            message_text += "*ПРЕМИУМ МОДЕЛИ:* ⭐\n\n"
+            message_text += format_models_list(premium_models, show_price=True)
+            message_text += "\n\n"
+
+        # Show premium status
+        if premium_expires and datetime.now() < premium_expires:
+            time_left = premium_expires - datetime.now()
+            days = time_left.days
+            hours = time_left.seconds // 3600
+            message_text += f"*У вас есть премиум доступ!* 💎\n"
+            message_text += f"Истекает через: {days} дн. {hours} ч. ⏰\n\n"
+        else:
+            premium_price = TOKEN_CONFIG['premium_price_per_day']
+            message_text += "*Для доступа к премиум моделям:* 💡\n"
+            message_text += f"Купите премиум доступ: /buy\\_premium ({premium_price} токенов/день)\n\n"
+
+        message_text += "*Укажите ID модели для переключения:* 📝"
+
+        await update.message.reply_text(message_text, parse_mode='Markdown')
+        return SWITCH_MODEL_ID
+
+    except Exception as e:
+        logger.error(f"Error in switch_model_start for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+        return ConversationHandler.END
+
+
+async def switch_model_id_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle model ID input for switch_model"""
+    user_id = update.effective_user.id
+    model_id = update.message.text.strip()
+
+    try:
+        # Get model config
+        config = get_model_config(model_id)
+        if not config:
+            await update.message.reply_text(
+                f"Модель '{model_id}' не найдена ❌\n\n"
+                f"Используйте /switch\\_model чтобы посмотреть доступные модели.",
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
+
+        # Model names and descriptions are developer-defined, don't escape them
+        
+        # Check AI_MODE compatibility
+        if Config.AI_MODE == 'local' and config.model_type != ModelType.LOCAL:
+            await update.message.reply_text(
+                f"Модель *{config.name}* является облачной ❌\n\n"
+                f"Вы работаете в локальном режиме (AI\\_MODE=local).\n"
+                f"Выберите локальную модель или смените режим в config.env",
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
+
+        if Config.AI_MODE == 'openrouter' and config.model_type != ModelType.OPENROUTER:
+            await update.message.reply_text(
+                f"Модель *{config.name}* является локальной ❌\n\n"
+                f"Вы работаете в облачном режиме (AI\\_MODE=openrouter).\n"
+                f"Выберите облачную модель или смените режим в config.env",
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
+
+        # Check premium access
+        premium_expires = user_manager.get_user_premium_expires(user_id)
+        
+        if config.tier == ModelTier.PREMIUM:
+            # Check if user has premium access
+            if not premium_expires or datetime.now() >= premium_expires:
+                price = TOKEN_CONFIG['premium_price_per_day']
+                await update.message.reply_text(
+                    f"*Доступ к премиум модели ограничен* ❌\n\n"
+                    f"Модель *{config.name}* доступна только с премиум подпиской.\n\n"
+                    f"Цена: {price} токенов/день 💰\n\n"
+                    f"Купите премиум доступ: /buy\\_premium",
+                    parse_mode='Markdown'
+                )
+                return ConversationHandler.END
+
+        # Set user model
+        success = user_manager.set_user_model(user_id, model_id)
+
+        if success:
+            type_icon = "💻" if config.model_type == ModelType.LOCAL else "☁️"
+            await update.message.reply_text(
+                f"*Модель успешно изменена!* ✅\n\n"
+                f"*{config.name}* {type_icon}\n"
+                f"{config.description}\n\n"
+                f"Все последующие запросы будут использовать эту модель.",
+                parse_mode='Markdown'
+            )
+            logger.info(f"User {user_id} switched to model {model_id}")
+        else:
+            await update.message.reply_text(
+                "Не удалось изменить модель. Попробуйте позже ❌",
+                parse_mode='Markdown'
+            )
+
+    except Exception as e:
+        logger.error(f"Error in switch_model_id_handler for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+
+    return ConversationHandler.END
+
+
+async def switch_model_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancel switch model conversation"""
+    await update.message.reply_text("Переключение модели отменено ❌")
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
+async def my_model_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle the /my_model command to show current model and premium status"""
+    user_id = update.effective_user.id
+
+    # Check if user has filled their info
+    if not await check_user_info_filled(update, context):
+        return
+
+    try:
+        # Ensure user exists
+        user_manager.get_or_create_user(
+            user_id=user_id,
+            username=update.effective_user.username,
+            first_name=update.effective_user.first_name,
+            last_name=update.effective_user.last_name
+        )
+
+        # Get user model and premium status
+        model_id = user_manager.get_user_model(user_id)
+        premium_expires = user_manager.get_user_premium_expires(user_id)
+
+        config = get_model_config(model_id)
+        if not config:
+            await update.message.reply_text("Ошибка получения информации о модели ❌")
+            return
+
+        # Build message
+        type_text = "Локальная 💻" if config.model_type == ModelType.LOCAL else "Облачная ☁️"
+        tier_text = "Премиум ⭐" if config.tier == ModelTier.PREMIUM else "Бесплатная 🆓"
+        
+        # Model names and descriptions are developer-defined, don't escape them
+
+        message_text = f"*Информация о вашей модели* 🤖\n\n"
+        message_text += f"*Название:* {config.name}\n"
+        message_text += f"*Тип:* {type_text}\n"
+        message_text += f"*Уровень:* {tier_text}\n\n"
+        message_text += f"{config.description}\n\n"
+
+        # Show premium status
+        message_text += "*Премиум статус:* 💎\n"
+        if premium_expires and datetime.now() < premium_expires:
+            time_left = premium_expires - datetime.now()
+            days = time_left.days
+            hours = time_left.seconds // 3600
+            expires_str = premium_expires.strftime('%Y-%m-%d %H:%M').replace(':', '\\:')
+            message_text += f"Активен ✅\n"
+            message_text += f"Истекает: {expires_str} ⏰\n"
+            message_text += f"Осталось: {days} дн. {hours} ч. ⏳\n"
+        else:
+            premium_price = TOKEN_CONFIG['premium_price_per_day']
+            message_text += f"Нет активной подписки ❌\n"
+            message_text += f"Купите доступ: /buy\\_premium ({premium_price} токенов/день)\n"
+
+        message_text += f"\n\n_Сменить модель:_ /switch\\_model\n"
+        message_text += f"_Купить премиум:_ /buy\\_premium"
+
+        await update.message.reply_text(message_text, parse_mode='Markdown')
+        logger.info(f"User {user_id} checked their model info")
+
+    except Exception as e:
+        logger.error(f"Error in my_model command for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+
+
+async def buy_premium_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle the /buy_premium command to purchase premium access"""
+    user_id = update.effective_user.id
+
+    # Check if user has filled their info
+    if not await check_user_info_filled(update, context):
+        return ConversationHandler.END
+
+    try:
+        # Ensure user exists
+        user_manager.get_or_create_user(
+            user_id=user_id,
+            username=update.effective_user.username,
+            first_name=update.effective_user.first_name,
+            last_name=update.effective_user.last_name
+        )
+
+        PREMIUM_PRICE = TOKEN_CONFIG['premium_price_per_day']
+
+        # Get user balance and premium status
+        balance = user_manager.get_balance_info(user_id)
+        premium_expires = user_manager.get_user_premium_expires(user_id)
+
+        # Build message
+        message_text = "*Покупка премиум доступа* 💎\n\n"
+        message_text += f"*Цена:* {PREMIUM_PRICE} токенов за 1 день 💰\n"
+        message_text += f"*Ваш баланс:* {balance['tokens']} токенов 💳\n\n"
+
+        # Check if already has premium
+        if premium_expires and datetime.now() < premium_expires:
+            time_left = premium_expires - datetime.now()
+            days = time_left.days
+            hours = time_left.seconds // 3600
+            message_text += f"*Текущий премиум статус:* ✅\n"
+            message_text += f"Истекает через: {days} дн. {hours} ч. ⏰\n\n"
+            message_text += f"Покупка продлит подписку\n\n"
+
+        # Check if enough tokens for at least 1 day
+        if balance['tokens'] < PREMIUM_PRICE:
+            needed = PREMIUM_PRICE - balance['tokens']
+            message_text += f"*Недостаточно токенов!* ❌\n\n"
+            message_text += f"Не хватает: {needed} токенов\n\n"
+            message_text += f"*Как заработать:* 💡\n"
+            message_text += f"• Ежедневная рулетка: /roulette (+1-50 токенов)\n"
+            
+            await update.message.reply_text(message_text, parse_mode='Markdown')
+            return ConversationHandler.END
+
+        # Calculate max days can afford
+        max_days = balance['tokens'] // PREMIUM_PRICE
+        
+        message_text += f"*Доступно для покупки:* 📊\n"
+        message_text += f"• Максимум дней: {max_days}\n"
+        message_text += f"• Стоимость {max_days} дн: {max_days * PREMIUM_PRICE} токенов\n\n"
+        
+        message_text += f"*Введите количество дней для покупки* (1-{max_days}): 📝"
+
+        await update.message.reply_text(message_text, parse_mode='Markdown')
+        return BUY_PREMIUM_DAYS
+
+    except Exception as e:
+        logger.error(f"Error in buy_premium_start for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+        return ConversationHandler.END
+
+
+async def buy_premium_days_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle days input for premium purchase"""
+    user_id = update.effective_user.id
+    text = update.message.text.strip()
+
+    try:
+        days = int(text)
+        
+        if days <= 0:
+            await update.message.reply_text(
+                "Количество дней должно быть положительным числом ❌\n\n"
+                "Попробуйте еще раз:",
+                parse_mode='Markdown'
+            )
+            return BUY_PREMIUM_DAYS
+        
+        PREMIUM_PRICE = TOKEN_CONFIG['premium_price_per_day']
+        balance = user_manager.get_balance_info(user_id)
+        max_days = balance['tokens'] // PREMIUM_PRICE
+        
+        if days > max_days:
+            await update.message.reply_text(
+                f"Недостаточно токенов для покупки {days} дн. ❌\n\n"
+                f"Ваш баланс: {balance['tokens']} токенов 💳\n"
+                f"Максимум доступно: {max_days} дн. 📊\n\n"
+                f"Введите количество дней (1-{max_days}):",
+                parse_mode='Markdown'
+            )
+            return BUY_PREMIUM_DAYS
+        
+        # Save days to context
+        context.user_data['premium_days'] = days
+        
+        total_cost = PREMIUM_PRICE * days
+        remaining = balance['tokens'] - total_cost
+        
+        # Get current premium status
+        premium_expires = user_manager.get_user_premium_expires(user_id)
+        
+        message_text = "*Подтверждение покупки* ⚠️\n\n"
+        message_text += f"*Количество дней:* {days} 📅\n"
+        message_text += f"*Стоимость:* {total_cost} токенов 💰\n"
+        message_text += f"*Останется:* {remaining} токенов 💳\n\n"
+        
+        if premium_expires and datetime.now() < premium_expires:
+            message_text += f"Подписка будет продлена на +{days} дн. ✅\n\n"
+        else:
+            message_text += f"Вы получите {days} дн. премиум доступа ✅\n\n"
+        
+        message_text += f"Подтвердить покупку?\n\n"
+        message_text += f"Введите *'да'* для подтверждения или *'нет'* для отмены:"
+        
+        await update.message.reply_text(message_text, parse_mode='Markdown')
+        return BUY_PREMIUM_CONFIRM
+        
+    except ValueError:
+        await update.message.reply_text(
+            "Неверный формат. Введите число (количество дней) ❌\n\n"
+            "Попробуйте еще раз:",
+            parse_mode='Markdown'
+        )
+        return BUY_PREMIUM_DAYS
+
+
+async def buy_premium_confirm_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle confirmation for premium purchase"""
+    user_id = update.effective_user.id
+    user_response = update.message.text.lower().strip()
+
+    if user_response not in ['да', 'yes', 'y', '+']:
+        await update.message.reply_text(
+            "Покупка премиум доступа отменена ❌",
+            parse_mode='Markdown'
+        )
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    days = context.user_data.get('premium_days', 1)
+    PREMIUM_PRICE = TOKEN_CONFIG['premium_price_per_day']
+
+    try:
+        # Purchase premium
+        success, message = user_manager.purchase_premium(user_id, days=days)
+
+        if success:
+            premium_expires = user_manager.get_user_premium_expires(user_id)
+            balance = user_manager.get_balance_info(user_id)
+            total_cost = PREMIUM_PRICE * days
+            
+            # Format date safely for Markdown (escape colons)
+            expires_str = premium_expires.strftime('%Y-%m-%d %H:%M').replace(':', '\\:')
+
+            await update.message.reply_text(
+                f"*Премиум доступ активирован!* ✅\n\n"
+                f"Доступ до: {expires_str} 💎\n"
+                f"Куплено дней: {days} 📅\n"
+                f"Потрачено: {total_cost} токенов 💰\n"
+                f"Осталось: {balance['tokens']} токенов 💳\n\n"
+                f"*Теперь вам доступны все премиум модели!* ⭐\n\n"
+                f"Выберите модель: /switch\\_model",
+                parse_mode='Markdown'
+            )
+            logger.info(f"User {user_id} purchased premium access for {days} days")
+        else:
+            await update.message.reply_text(f"{message} ❌", parse_mode='Markdown')
+
+    except Exception as e:
+        logger.error(f"Error in buy_premium_confirm_handler for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+    
+    finally:
+        context.user_data.clear()
+
+    return ConversationHandler.END
+
+
+async def buy_premium_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancel premium purchase"""
+    await update.message.reply_text("Покупка премиум доступа отменена ❌")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -4069,13 +4638,16 @@ async def setup_bot_commands(application):
         BotCommand("help", "Справка по командам"),
         BotCommand("balance", "Проверить баланс токенов"),
         BotCommand("roulette", "🎰 Ежедневная рулетка (1-50 токенов)"),
+        BotCommand("my_model", "🤖 Моя текущая AI модель"),
+        BotCommand("switch_model", "🔄 Переключить AI модель"),
+        BotCommand("buy_premium", f"💎 Купить премиум доступ ({TOKEN_CONFIG['premium_price_per_day']} токенов/день)"),
         BotCommand("finance", "Зарегистрировать бизнес и получить финплан"),
         BotCommand("clients", "Найти клиентов"),
         BotCommand("executors", "Найти исполнителей"),
         BotCommand("find_similar", "Найти партнёров"),
         BotCommand("export_history", "Экспорт истории чата в PDF"),
         BotCommand("add_employee", "Пригласить сотрудника"),
-        BotCommand("swipe_employees", "🔍 Найти сотрудников (свайп)"),
+        BotCommand("find_employees", "🔍 Найти сотрудников"),
         BotCommand("fire_employee", "Уволить сотрудника"),
         BotCommand("employees", "Список сотрудников"),
         BotCommand("invitations", "Посмотреть приглашения"),
@@ -4394,17 +4966,43 @@ def main() -> None:
         )
         application.add_handler(executors_handler)
 
-        # Register swipe employees conversation handler
-        swipe_employees_handler = ConversationHandler(
-            entry_points=[CommandHandler("swipe_employees", swipe_employees_start)],
+        # Register find employees conversation handler
+        find_employees_handler = ConversationHandler(
+            entry_points=[CommandHandler("find_employees", find_employees_start)],
             states={
-                SWIPE_EMPLOYEES_VIEWING: [
+                FIND_EMPLOYEES_VIEWING: [
                     CallbackQueryHandler(swipe_callback_handler, pattern="^swipe_(accept|reject)_")
                 ],
             },
-            fallbacks=[CommandHandler("cancel", swipe_employees_cancel)],  # Track callback queries per message
+            fallbacks=[CommandHandler("cancel", find_employees_cancel)],  # Track callback queries per message
         )
-        application.add_handler(swipe_employees_handler)
+        application.add_handler(find_employees_handler)
+
+        # Register model management conversation handlers
+        switch_model_handler = ConversationHandler(
+            entry_points=[CommandHandler("switch_model", switch_model_start)],
+            states={
+                SWITCH_MODEL_ID: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, switch_model_id_handler)
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", switch_model_cancel)],
+        )
+        application.add_handler(switch_model_handler)
+
+        buy_premium_handler = ConversationHandler(
+            entry_points=[CommandHandler("buy_premium", buy_premium_start)],
+            states={
+                BUY_PREMIUM_DAYS: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, buy_premium_days_handler)
+                ],
+                BUY_PREMIUM_CONFIRM: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, buy_premium_confirm_handler)
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", buy_premium_cancel)],
+        )
+        application.add_handler(buy_premium_handler)
         # Register start command as conversation handler (for user info collection)
         start_handler = ConversationHandler(
             entry_points=[CommandHandler("start", start_command)],
@@ -4424,6 +5022,7 @@ def main() -> None:
         application.add_handler(CommandHandler("help", help_command))
         application.add_handler(CommandHandler("find_similar", find_similar_command))
         application.add_handler(CommandHandler("export_history", export_history_command))
+        application.add_handler(CommandHandler("my_model", my_model_command))
 
         # Register callback query handler for inline buttons (only invitation buttons)
         application.add_handler(CallbackQueryHandler(
@@ -4455,7 +5054,20 @@ def main() -> None:
 
         # Start the bot
         logger.info("🚀 Bot is starting...")
-        logger.info(f"Using AI model: {Config.AI_MODEL}")
+        logger.info(f"AI Mode: {Config.AI_MODE}")
+        
+        # Log default model for the current mode
+        try:
+            from model_manager import get_default_model_id, get_model_config
+            default_model_id = get_default_model_id(Config.AI_MODE)
+            default_config = get_model_config(default_model_id)
+            if default_config:
+                logger.info(f"Default AI model: {default_config.name} (ID: {default_model_id})")
+            else:
+                logger.info(f"Default AI model: {default_model_id}")
+        except Exception as e:
+            logger.warning(f"Could not determine default model: {e}")
+        
         application.run_polling(allowed_updates=Update.ALL_TYPES)
 
     except KeyboardInterrupt:
