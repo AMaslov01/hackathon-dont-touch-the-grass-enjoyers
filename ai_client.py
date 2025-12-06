@@ -304,6 +304,7 @@ Question: {working_prompt}"""
                 json=data, 
                 timeout=60
             )
+            logger.info(f"Successfully received OpenRouter")
             response.raise_for_status()
             
             result = response.json()

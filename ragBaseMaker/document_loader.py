@@ -14,6 +14,7 @@ from langchain_community.document_loaders import (
     UnstructuredMarkdownLoader,
     TextLoader,
 )
+from langchain_community.vectorstores.utils import filter_complex_metadata
 
 
 class DocumentLoader:
@@ -103,6 +104,10 @@ class DocumentLoader:
             
             # Load documents
             docs = loader.load()
+            
+            # Filter complex metadata (lists, dicts) that ChromaDB doesn't support
+            # This is especially important for Excel files
+            docs = filter_complex_metadata(docs)
             
             # Add source_title to metadata if not present
             for doc in docs:

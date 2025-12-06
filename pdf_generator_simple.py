@@ -18,6 +18,36 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def remove_emojis(text: str) -> str:
+    """
+    Remove emojis from text for better PDF compatibility
+    WeasyPrint doesn't handle emojis well, so we remove them
+    """
+    if not text:
+        return text
+    
+    import re
+    
+    # Remove emojis using regex
+    # This pattern matches most common emoji ranges
+    emoji_pattern = re.compile(
+        "["
+        "\U0001F600-\U0001F64F"  # emoticons
+        "\U0001F300-\U0001F5FF"  # symbols & pictographs
+        "\U0001F680-\U0001F6FF"  # transport & map symbols
+        "\U0001F1E0-\U0001F1FF"  # flags (iOS)
+        "\U00002702-\U000027B0"
+        "\U000024C2-\U0001F251"
+        "\U0001F900-\U0001F9FF"  # Supplemental Symbols and Pictographs
+        "\U0001FA00-\U0001FA6F"  # Chess Symbols
+        "\U00002600-\U000026FF"  # Miscellaneous Symbols
+        "]+",
+        flags=re.UNICODE
+    )
+    
+    return emoji_pattern.sub('', text)
+
+
 # CSS стили для красивого PDF
 PDF_CSS = """
 @page {
@@ -128,8 +158,11 @@ class SimpleFinancialPlanPDF:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 output_path = output_dir / f"financial_plan_{timestamp}.pdf"
             
+            # Remove emojis from AI response for better PDF compatibility
+            ai_response_clean = remove_emojis(ai_response)
+            
             # Build HTML document
-            html_content = self._build_html(ai_response, business_info, user_name)
+            html_content = self._build_html(ai_response_clean, business_info, user_name)
             
             # Generate PDF
             HTML(string=html_content).write_pdf(
@@ -150,25 +183,26 @@ class SimpleFinancialPlanPDF:
         # Header section
         date_str = datetime.now().strftime("%d.%m.%Y")
         header = f"""
-        <h1>💼 Финансовый План</h1>
+        <h1>Финансовый План</h1>
         <div class="metadata">
             Дата: {date_str}
         </div>
         """
         
-        # Business info section
+        # Business info section (clean emojis from user input)
+        business_type = remove_emojis(business_info.get('business_type', 'Не указан'))
         business_section = f"""
-        <h2>📊 Информация о бизнесе</h2>
+        <h2>Информация о бизнесе</h2>
         <ul>
-            <li><strong>Тип бизнеса:</strong> {business_info.get('business_type', 'Не указан')}</li>
+            <li><strong>Тип бизнеса:</strong> {business_type}</li>
         """
         
         if business_info.get('financial_situation'):
-            situation = business_info['financial_situation'][:200]
+            situation = remove_emojis(business_info['financial_situation'][:200])
             business_section += f"<li><strong>Финансовая ситуация:</strong> {situation}</li>"
         
         if business_info.get('goals'):
-            goals = business_info['goals'][:200]
+            goals = remove_emojis(business_info['goals'][:200])
             business_section += f"<li><strong>Цели:</strong> {goals}</li>"
         
         business_section += "</ul>"
@@ -303,7 +337,7 @@ class SimpleChatHistoryPDF:
         date_str = datetime.now().strftime("%d.%m.%Y %H:%M")
         user_info = f"Пользователь: {user_name}" if user_name else ""
         header = f"""
-        <h1>💬 История общения с ботом</h1>
+        <h1>История общения с ботом</h1>
         <div class="metadata">
             {user_info}<br>
             {date_str}
@@ -320,8 +354,8 @@ class SimpleChatHistoryPDF:
             else:
                 time_str = timestamp.strftime("%d.%m.%Y %H:%M")
             
-            prompt = entry.get('prompt', '')[:1000]
-            response = entry.get('response', '')[:3000]
+            prompt = remove_emojis(entry.get('prompt', '')[:1000])
+            response = remove_emojis(entry.get('response', '')[:3000])
             
             messages_html += f"""
             <div class="message user-message">
