@@ -91,8 +91,12 @@ MODELS: Dict[str, ModelConfig] = {
         tier=ModelTier.PREMIUM,
         model_type=ModelType.LOCAL,
         description="⭐ Премиум модель с отличным русским языком. Быстрая и качественная генерация. Идеальна для финансовых планов с таблицами.",
+        # Вариант 1 (основной): Официальный репозиторий Qwen
         repo_id="Qwen/Qwen2.5-7B-Instruct-GGUF",
-        filename="qwen2_5-7b-instruct-q4_k_m.gguf",
+        filename="qwen2.5-7b-instruct-q4_k_m.gguf",
+        # Вариант 2 (если не работает): QuantFactory
+        # repo_id="QuantFactory/Qwen2.5-7B-Instruct-GGUF",
+        # filename="Qwen2.5-7B-Instruct.Q4_K_M.gguf",
         prompt_format="qwen",
         stop_tokens=["<|im_end|>", "<|endoftext|>"]
     ),
