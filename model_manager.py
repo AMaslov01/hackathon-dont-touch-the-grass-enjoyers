@@ -102,8 +102,8 @@ MODELS: Dict[str, ModelConfig] = {
     # =========================================================================
     "deepseek-chimera": ModelConfig(
         id="deepseek-v3",
-        name="DeepSeek V3 (Премиум)",
-        tier=ModelTier.PREMIUM,
+        name="DeepSeek V3",
+        tier=ModelTier.FREE,
         model_type=ModelType.OPENROUTER,
         description="⭐ DeepSeek chimera - мощная модель с контекстом 64K токенов.",
         openrouter_id="tngtech/deepseek-r1t2-chimera:free"  # БЕСПЛАТНАЯ на OpenRouter!
@@ -125,8 +125,8 @@ MODELS: Dict[str, ModelConfig] = {
     
     "glm-4.5-air": ModelConfig(
         id="glm-4.5-air",
-        name="GLM-4.5-Air (Бесплатная)",
-        tier=ModelTier.FREE,
+        name="GLM-4.5-Air (Премиум)",
+        tier=ModelTier.PREMIUM,
         model_type=ModelType.OPENROUTER,
         description="Быстрая облачная модель для общих задач. Требует интернет.",
         openrouter_id="z-ai/glm-4.5-air:free"
