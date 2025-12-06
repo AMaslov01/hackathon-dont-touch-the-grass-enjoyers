@@ -4143,11 +4143,15 @@ async def switch_model_id_handler(update: Update, context: ContextTypes.DEFAULT_
             )
             return ConversationHandler.END
 
+        # Escape model name for Markdown
+        escaped_model_name = escape_markdown(config.name)
+        escaped_model_desc = escape_markdown(config.description)
+        
         # Check AI_MODE compatibility
         if Config.AI_MODE == 'local' and config.model_type != ModelType.LOCAL:
             await update.message.reply_text(
-                f"Модель *{config.name}* является облачной ❌\n\n"
-                f"Вы работаете в локальном режиме (AI_MODE=local).\n"
+                f"Модель *{escaped_model_name}* является облачной ❌\n\n"
+                f"Вы работаете в локальном режиме (AI\\_MODE=local).\n"
                 f"Выберите локальную модель или смените режим в config.env",
                 parse_mode='Markdown'
             )
@@ -4155,8 +4159,8 @@ async def switch_model_id_handler(update: Update, context: ContextTypes.DEFAULT_
 
         if Config.AI_MODE == 'openrouter' and config.model_type != ModelType.OPENROUTER:
             await update.message.reply_text(
-                f"Модель *{config.name}* является локальной ❌\n\n"
-                f"Вы работаете в облачном режиме (AI_MODE=openrouter).\n"
+                f"Модель *{escaped_model_name}* является локальной ❌\n\n"
+                f"Вы работаете в облачном режиме (AI\\_MODE=openrouter).\n"
                 f"Выберите облачную модель или смените режим в config.env",
                 parse_mode='Markdown'
             )
@@ -4171,7 +4175,7 @@ async def switch_model_id_handler(update: Update, context: ContextTypes.DEFAULT_
                 price = TOKEN_CONFIG['premium_price_per_day']
                 await update.message.reply_text(
                     f"*Доступ к премиум модели ограничен* ❌\n\n"
-                    f"Модель *{config.name}* доступна только с премиум подпиской.\n\n"
+                    f"Модель *{escaped_model_name}* доступна только с премиум подпиской.\n\n"
                     f"Цена: {price} токенов/день 💰\n\n"
                     f"Купите премиум доступ: /buy\\_premium",
                     parse_mode='Markdown'
@@ -4185,8 +4189,8 @@ async def switch_model_id_handler(update: Update, context: ContextTypes.DEFAULT_
             type_icon = "💻" if config.model_type == ModelType.LOCAL else "☁️"
             await update.message.reply_text(
                 f"*Модель успешно изменена!* ✅\n\n"
-                f"*{config.name}* {type_icon}\n"
-                f"{config.description}\n\n"
+                f"*{escaped_model_name}* {type_icon}\n"
+                f"{escaped_model_desc}\n\n"
                 f"Все последующие запросы будут использовать эту модель.",
                 parse_mode='Markdown'
             )
