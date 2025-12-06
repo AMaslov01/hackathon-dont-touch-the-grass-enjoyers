@@ -23,7 +23,7 @@ class Config:
     # OpenRouter AI Configuration (used when AI_MODE='openrouter')
     OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
     OPENROUTER_API_URL = os.getenv('OPENROUTER_API_URL')
-    AI_MODEL = os.getenv('AI_MODEL')
+    
     
     # Local LLM Configuration (used when AI_MODE='local')
     LOCAL_MODEL_PATH = os.getenv('LOCAL_MODEL_PATH')  # Optional: path to pre-downloaded model
@@ -37,10 +37,6 @@ class Config:
     RAG_COLLECTION_NAME = os.getenv('RAG_COLLECTION_NAME', 'financial_docs')  # Collection name
     RAG_TOP_K = int(os.getenv('RAG_TOP_K', '3'))  # Number of documents to retrieve
     RAG_MAX_CONTEXT = int(os.getenv('RAG_MAX_CONTEXT', '2000'))  # Max context tokens
-    
-    # Translation Configuration (for models trained on English data)
-    TRANSLATION_ENABLED = os.getenv('TRANSLATION_ENABLED', 'false').lower() == 'true'
-    TRANSLATION_DEVICE = os.getenv('TRANSLATION_DEVICE', 'cpu')  # 'cpu' or 'cuda'
     
     # Database Configuration
     DB_HOST = os.getenv('DB_HOST') 
@@ -59,7 +55,13 @@ class Config:
         """Validate required configuration"""
         if not cls.TELEGRAM_BOT_TOKEN:
             raise ValueError("TELEGRAM_BOT_TOKEN not found in environment variables")
-        if not cls.OPENROUTER_API_KEY:
-            raise ValueError("OPENROUTER_API_KEY not found in environment variables")
+        
+        # Validate AI mode specific settings
+        if cls.AI_MODE == 'openrouter':
+            if not cls.OPENROUTER_API_KEY:
+                raise ValueError("OPENROUTER_API_KEY required when AI_MODE=openrouter")
+            if not cls.OPENROUTER_API_URL:
+                raise ValueError("OPENROUTER_API_URL required when AI_MODE=openrouter")
+        
         return True
 

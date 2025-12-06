@@ -931,6 +931,104 @@ class UserManager:
         """Mark that user has been notified about roulette"""
         return user_repo.mark_roulette_notified(user_id)
 
+    # Model management methods
+
+    def get_user_model(self, user_id: int) -> str:
+        """
+        Get user's selected AI model
+        
+        Args:
+            user_id: Telegram user ID
+        
+        Returns:
+            Model ID (defaults to 'llama3-finance' if not set)
+        """
+        try:
+            model_id = user_repo.get_user_model(user_id)
+            return model_id if model_id else 'llama3-finance'
+        except Exception as e:
+            logger.error(f"Failed to get user model for {user_id}: {e}")
+            return 'llama3-finance'
+
+    def set_user_model(self, user_id: int, model_id: str) -> bool:
+        """
+        Set user's AI model
+        
+        Args:
+            user_id: Telegram user ID
+            model_id: Model ID to set
+        
+        Returns:
+            True if successful
+        """
+        try:
+            return user_repo.set_user_model(user_id, model_id)
+        except Exception as e:
+            logger.error(f"Failed to set user model for {user_id}: {e}")
+            return False
+
+    def get_user_premium_expires(self, user_id: int) -> Optional[datetime]:
+        """
+        Get user's premium expiration date
+        
+        Args:
+            user_id: Telegram user ID
+        
+        Returns:
+            Premium expiration datetime or None
+        """
+        try:
+            return user_repo.get_user_premium_expires(user_id)
+        except Exception as e:
+            logger.error(f"Failed to get premium expires for {user_id}: {e}")
+            return None
+
+    def purchase_premium(self, user_id: int, days: int = 1) -> tuple[bool, str]:
+        """
+        Purchase premium access for specified days
+        
+        Args:
+            user_id: Telegram user ID
+            days: Number of days to purchase (default: 1)
+        
+        Returns:
+            Tuple of (success, message)
+        """
+        PREMIUM_PRICE_PER_DAY = TOKEN_CONFIG['premium_price_per_day']
+
+        try:
+            # Check balance
+            user = user_repo.get_user(user_id)
+            if not user:
+                return False, "Пользователь не найден"
+
+            total_cost = PREMIUM_PRICE_PER_DAY * days
+            if user['tokens'] < total_cost:
+                return False, f"Недостаточно токенов. Нужно: {total_cost}, у вас: {user['tokens']}"
+
+            # Calculate new expiration date
+            current_expires = self.get_user_premium_expires(user_id)
+            now = datetime.now()
+
+            if current_expires and current_expires > now:
+                # Extend existing subscription
+                new_expires = current_expires + timedelta(days=days)
+            else:
+                # New subscription
+                new_expires = now + timedelta(days=days)
+
+            # Deduct tokens and set premium
+            success = user_repo.purchase_premium(user_id, total_cost, new_expires)
+
+            if success:
+                return True, f"Премиум доступ активирован на {days} дн."
+            else:
+                return False, "Не удалось активировать премиум доступ"
+
+        except Exception as e:
+            logger.error(f"Failed to purchase premium for {user_id}: {e}")
+            return False, "Произошла ошибка при покупке премиум доступа"
+
 
 # Global user manager instance
 user_manager = UserManager()

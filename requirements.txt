@@ -33,10 +33,6 @@ langchain-experimental>=0.0.1
 langchain-core>=0.1.0
 langchain-community>=0.0.1
 
-# Translation (for models trained on English)
-sentencepiece>=0.1.99  # Required for OPUS-MT models
-sacremoses>=0.0.53  # Required for some translation models
-
 # Document loaders (for RAG via LangChain)
 pypdf>=3.0.0
 python-docx>=1.0.0

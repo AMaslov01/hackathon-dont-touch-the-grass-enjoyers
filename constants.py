@@ -616,7 +616,8 @@ TOKEN_CONFIG = {
     "cost_per_request": 1,
     "roulette_min": 1,
     "roulette_max": 50,
-    "roulette_interval_hours": 24
+    "roulette_interval_hours": 24,
+    "premium_price_per_day": 50  # Cost of 1 day of premium access
 }
 
 # Time format for displaying to users (Russian)

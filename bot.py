@@ -27,7 +27,13 @@ from ai_client import ai_client
 from user_manager import user_manager
 from constants import MESSAGES
 from constants import COMMANDS_COSTS
+from constants import TOKEN_CONFIG
 from pdf_generator_simple import pdf_generator, chat_history_pdf
+from model_manager import (
+    get_model_config, get_free_models, get_premium_models,
+    get_local_models, get_openrouter_models, format_models_list,
+    ModelTier, ModelType
+)
 
 # Configure logging
 logging.basicConfig(
@@ -103,6 +109,12 @@ SWITCH_BUSINESS_ID = range(31, 32)
 
 # Delete business conversation states
 DELETE_BUSINESS_ID, DELETE_BUSINESS_CONFIRM = range(32, 34)
+
+# Switch model conversation states
+SWITCH_MODEL_ID = range(34, 35)
+
+# Buy premium conversation states
+BUY_PREMIUM_DAYS, BUY_PREMIUM_CONFIRM = range(35, 37)
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -373,7 +385,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         # Generate AI response
         try:
-            ai_response = ai_client.generate_response(user_message)
+            # Get user's selected model
+            user_model = user_manager.get_user_model(user_id)
+            
+            ai_response = ai_client.generate_response(user_message, model_id=user_model)
 
             # Truncate if too long (Telegram limit is 4096 chars)
             if len(ai_response) > 4000:
@@ -664,8 +679,9 @@ async def finance_generate_plan(update: Update, context: ContextTypes.DEFAULT_TY
         # Update status message
         await thinking_msg.edit_text("🤖 Генерирую финансовый план с помощью AI...(это может занять до 5 минут)")
 
-        # Generate financial plan using AI
-        financial_plan = ai_client.generate_financial_plan(business_info)
+        # Generate financial plan using AI with user's selected model
+        user_model = user_manager.get_user_model(user_id)
+        financial_plan = ai_client.generate_financial_plan(business_info, model_id=user_model)
 
         logger.info(f"AI financial plan generated for user {user_id}, length: {len(financial_plan)}")
 
@@ -1348,8 +1364,9 @@ async def clients_search(update: Update, context: ContextTypes.DEFAULT_TYPE,
             await thinking_msg.edit_text(MESSAGES['clients_no_info'])
             return ConversationHandler.END
 
-        # Search for clients using AI
-        search_results = ai_client.find_clients(workers_info)
+        # Search for clients using AI with user's selected model
+        user_model = user_manager.get_user_model(user_id)
+        search_results = ai_client.find_clients(workers_info, model_id=user_model)
 
         logger.info(f"Clients search results generated for user {user_id}, length: {len(search_results)}")
 
@@ -1540,8 +1557,9 @@ async def executors_search(update: Update, context: ContextTypes.DEFAULT_TYPE,
             await thinking_msg.edit_text(MESSAGES['executors_no_info'])
             return ConversationHandler.END
 
-        # Search for executors using AI
-        search_results = ai_client.find_executors(executors_info)
+        # Search for executors using AI with user's selected model
+        user_model = user_manager.get_user_model(user_id)
+        search_results = ai_client.find_executors(executors_info, model_id=user_model)
 
         logger.info(f"Executors search results generated for user {user_id}, length: {len(search_results)}")
 
@@ -3633,8 +3651,9 @@ async def find_similar_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
             logger.info(f"Finding similar users for {user_id} among {len(parsed_users)} candidates")
 
-            # Find similar users using AI
-            search_results = ai_client.find_similar_users(current_user_info, parsed_users)
+            # Find similar users using AI with user's selected model
+            user_model = user_manager.get_user_model(user_id)
+            search_results = ai_client.find_similar_users(current_user_info, parsed_users, model_id=user_model)
 
             logger.info(f"Similar users results generated for user {user_id}, length: {len(search_results)}")
 
@@ -3994,6 +4013,410 @@ async def swipe_employees_cancel(update: Update, context: ContextTypes.DEFAULT_T
     return ConversationHandler.END
 
 
+# Model management command handlers
+async def switch_model_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Start the switch model conversation"""
+    user_id = update.effective_user.id
+
+    # Check if user has filled their info
+    if not await check_user_info_filled(update, context):
+        return ConversationHandler.END
+
+    try:
+        # Ensure user exists in database
+        user_manager.get_or_create_user(
+            user_id=user_id,
+            username=update.effective_user.username,
+            first_name=update.effective_user.first_name,
+            last_name=update.effective_user.last_name
+        )
+
+        # Get current user model and premium status
+        current_model_id = user_manager.get_user_model(user_id)
+        premium_expires = user_manager.get_user_premium_expires(user_id)
+
+        # Show current model
+        current_config = get_model_config(current_model_id)
+        current_model_text = f"*Ваша текущая модель:* {current_config.name}\n\n" if current_config else ""
+
+        # Filter models based on AI_MODE
+        if Config.AI_MODE == 'local':
+            # Show only local models
+            free_models = {k: v for k, v in get_free_models().items() if v.model_type == ModelType.LOCAL}
+            premium_models = {k: v for k, v in get_premium_models().items() if v.model_type == ModelType.LOCAL}
+            mode_text = "*Режим:* Локальные модели 💻"
+        else:
+            # Show only OpenRouter models
+            free_models = {k: v for k, v in get_free_models().items() if v.model_type == ModelType.OPENROUTER}
+            premium_models = {k: v for k, v in get_premium_models().items() if v.model_type == ModelType.OPENROUTER}
+            mode_text = "*Режим:* Облачные модели (OpenRouter) ☁️"
+
+        # Build message
+        message_text = f"*Переключение модели* 🤖\n\n{current_model_text}{mode_text}\n\n"
+
+        # Show free models
+        if free_models:
+            message_text += "*БЕСПЛАТНЫЕ МОДЕЛИ:* 🆓\n\n"
+            message_text += format_models_list(free_models, show_price=False)
+            message_text += "\n\n"
+
+        # Show premium models
+        if premium_models:
+            message_text += "*ПРЕМИУМ МОДЕЛИ:* ⭐\n\n"
+            message_text += format_models_list(premium_models, show_price=True)
+            message_text += "\n\n"
+
+        # Show premium status
+        if premium_expires and datetime.now() < premium_expires:
+            time_left = premium_expires - datetime.now()
+            days = time_left.days
+            hours = time_left.seconds // 3600
+            message_text += f"*У вас есть премиум доступ!* 💎\n"
+            message_text += f"Истекает через: {days} дн. {hours} ч. ⏰\n\n"
+        else:
+            message_text += "*Для доступа к премиум моделям:* 💡\n"
+            message_text += "Купите премиум доступ: /buy_premium (300 токенов/день)\n\n"
+
+        message_text += "*Укажите ID модели для переключения:* 📝"
+
+        await update.message.reply_text(message_text, parse_mode='Markdown')
+        return SWITCH_MODEL_ID
+
+    except Exception as e:
+        logger.error(f"Error in switch_model_start for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+        return ConversationHandler.END
+
+
+async def switch_model_id_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle model ID input for switch_model"""
+    user_id = update.effective_user.id
+    model_id = update.message.text.strip()
+
+    try:
+        # Get model config
+        config = get_model_config(model_id)
+        if not config:
+            await update.message.reply_text(
+                f"Модель '{model_id}' не найдена ❌\n\n"
+                f"Используйте /switch_model чтобы посмотреть доступные модели.",
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
+
+        # Check AI_MODE compatibility
+        if Config.AI_MODE == 'local' and config.model_type != ModelType.LOCAL:
+            await update.message.reply_text(
+                f"Модель *{config.name}* является облачной ❌\n\n"
+                f"Вы работаете в локальном режиме (AI_MODE=local).\n"
+                f"Выберите локальную модель или смените режим в config.env",
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
+
+        if Config.AI_MODE == 'openrouter' and config.model_type != ModelType.OPENROUTER:
+            await update.message.reply_text(
+                f"Модель *{config.name}* является локальной ❌\n\n"
+                f"Вы работаете в облачном режиме (AI_MODE=openrouter).\n"
+                f"Выберите облачную модель или смените режим в config.env",
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
+
+        # Check premium access
+        premium_expires = user_manager.get_user_premium_expires(user_id)
+        
+        if config.tier == ModelTier.PREMIUM:
+            # Check if user has premium access
+            if not premium_expires or datetime.now() >= premium_expires:
+                price = TOKEN_CONFIG['premium_price_per_day']
+                await update.message.reply_text(
+                    f"*Доступ к премиум модели ограничен* ❌\n\n"
+                    f"Модель *{config.name}* доступна только с премиум подпиской.\n\n"
+                    f"Цена: {price} токенов/день 💰\n\n"
+                    f"Купите премиум доступ: /buy_premium",
+                    parse_mode='Markdown'
+                )
+                return ConversationHandler.END
+
+        # Set user model
+        success = user_manager.set_user_model(user_id, model_id)
+
+        if success:
+            type_icon = "💻" if config.model_type == ModelType.LOCAL else "☁️"
+            await update.message.reply_text(
+                f"*Модель успешно изменена!* ✅\n\n"
+                f"*{config.name}* {type_icon}\n"
+                f"{config.description}\n\n"
+                f"Все последующие запросы будут использовать эту модель.",
+                parse_mode='Markdown'
+            )
+            logger.info(f"User {user_id} switched to model {model_id}")
+        else:
+            await update.message.reply_text(
+                "Не удалось изменить модель. Попробуйте позже ❌",
+                parse_mode='Markdown'
+            )
+
+    except Exception as e:
+        logger.error(f"Error in switch_model_id_handler for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+
+    return ConversationHandler.END
+
+
+async def switch_model_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancel switch model conversation"""
+    await update.message.reply_text("❌ Переключение модели отменено")
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
+async def my_model_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle the /my_model command to show current model and premium status"""
+    user_id = update.effective_user.id
+
+    # Check if user has filled their info
+    if not await check_user_info_filled(update, context):
+        return
+
+    try:
+        # Ensure user exists
+        user_manager.get_or_create_user(
+            user_id=user_id,
+            username=update.effective_user.username,
+            first_name=update.effective_user.first_name,
+            last_name=update.effective_user.last_name
+        )
+
+        # Get user model and premium status
+        model_id = user_manager.get_user_model(user_id)
+        premium_expires = user_manager.get_user_premium_expires(user_id)
+
+        config = get_model_config(model_id)
+        if not config:
+            await update.message.reply_text("❌ Ошибка получения информации о модели")
+            return
+
+        # Build message
+        type_text = "Локальная 💻" if config.model_type == ModelType.LOCAL else "Облачная ☁️"
+        tier_text = "Премиум ⭐" if config.tier == ModelTier.PREMIUM else "Бесплатная 🆓"
+
+        message_text = f"*Информация о вашей модели* 🤖\n\n"
+        message_text += f"*Название:* {config.name}\n"
+        message_text += f"*Тип:* {type_text}\n"
+        message_text += f"*Уровень:* {tier_text}\n\n"
+        message_text += f"{config.description}\n\n"
+
+        # Show premium status
+        message_text += "*Премиум статус:* 💎\n"
+        if premium_expires and datetime.now() < premium_expires:
+            time_left = premium_expires - datetime.now()
+            days = time_left.days
+            hours = time_left.seconds // 3600
+            message_text += f"✅ Активен\n"
+            message_text += f"⏰ Истекает: {premium_expires.strftime('%Y-%m-%d %H:%M')}\n"
+            message_text += f"⏳ Осталось: {days} дн. {hours} ч.\n"
+        else:
+            message_text += f"❌ Нет активной подписки\n"
+            message_text += f"Купите доступ: /buy_premium (300 токенов/день)\n"
+
+        message_text += f"\n_Сменить модель: /switch_model_"
+
+        await update.message.reply_text(message_text, parse_mode='Markdown')
+        logger.info(f"User {user_id} checked their model info")
+
+    except Exception as e:
+        logger.error(f"Error in my_model command for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+
+
+async def buy_premium_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle the /buy_premium command to purchase premium access"""
+    user_id = update.effective_user.id
+
+    # Check if user has filled their info
+    if not await check_user_info_filled(update, context):
+        return ConversationHandler.END
+
+    try:
+        # Ensure user exists
+        user_manager.get_or_create_user(
+            user_id=user_id,
+            username=update.effective_user.username,
+            first_name=update.effective_user.first_name,
+            last_name=update.effective_user.last_name
+        )
+
+        PREMIUM_PRICE = TOKEN_CONFIG['premium_price_per_day']
+
+        # Get user balance and premium status
+        balance = user_manager.get_balance_info(user_id)
+        premium_expires = user_manager.get_user_premium_expires(user_id)
+
+        # Build message
+        message_text = "*Покупка премиум доступа* 💎\n\n"
+        message_text += f"*Цена:* {PREMIUM_PRICE} токенов за 1 день 💰\n"
+        message_text += f"*Ваш баланс:* {balance['tokens']} токенов 💳\n\n"
+
+        # Check if already has premium
+        if premium_expires and datetime.now() < premium_expires:
+            time_left = premium_expires - datetime.now()
+            days = time_left.days
+            hours = time_left.seconds // 3600
+            message_text += f"*Текущий премиум статус:* ✅\n"
+            message_text += f"Истекает через: {days} дн. {hours} ч. ⏰\n\n"
+            message_text += f"Покупка продлит подписку\n\n"
+
+        # Check if enough tokens for at least 1 day
+        if balance['tokens'] < PREMIUM_PRICE:
+            needed = PREMIUM_PRICE - balance['tokens']
+            message_text += f"*Недостаточно токенов!* ❌\n\n"
+            message_text += f"Не хватает: {needed} токенов\n\n"
+            message_text += f"*Как заработать:* 💡\n"
+            message_text += f"• Ежедневная рулетка: /roulette (+1-50 токенов)\n"
+            
+            await update.message.reply_text(message_text, parse_mode='Markdown')
+            return ConversationHandler.END
+
+        # Calculate max days can afford
+        max_days = balance['tokens'] // PREMIUM_PRICE
+        
+        message_text += f"*Доступно для покупки:* 📊\n"
+        message_text += f"• Максимум дней: {max_days}\n"
+        message_text += f"• Стоимость {max_days} дн: {max_days * PREMIUM_PRICE} токенов\n\n"
+        
+        message_text += f"*Введите количество дней для покупки* (1-{max_days}): 📝"
+
+        await update.message.reply_text(message_text, parse_mode='Markdown')
+        return BUY_PREMIUM_DAYS
+
+    except Exception as e:
+        logger.error(f"Error in buy_premium_start for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+        return ConversationHandler.END
+
+
+async def buy_premium_days_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle days input for premium purchase"""
+    user_id = update.effective_user.id
+    text = update.message.text.strip()
+
+    try:
+        days = int(text)
+        
+        if days <= 0:
+            await update.message.reply_text(
+                "Количество дней должно быть положительным числом ❌\n\n"
+                "Попробуйте еще раз:",
+                parse_mode='Markdown'
+            )
+            return BUY_PREMIUM_DAYS
+        
+        PREMIUM_PRICE = TOKEN_CONFIG['premium_price_per_day']
+        balance = user_manager.get_balance_info(user_id)
+        max_days = balance['tokens'] // PREMIUM_PRICE
+        
+        if days > max_days:
+            await update.message.reply_text(
+                f"Недостаточно токенов для покупки {days} дн. ❌\n\n"
+                f"Ваш баланс: {balance['tokens']} токенов 💳\n"
+                f"Максимум доступно: {max_days} дн. 📊\n\n"
+                f"Введите количество дней (1-{max_days}):",
+                parse_mode='Markdown'
+            )
+            return BUY_PREMIUM_DAYS
+        
+        # Save days to context
+        context.user_data['premium_days'] = days
+        
+        total_cost = PREMIUM_PRICE * days
+        remaining = balance['tokens'] - total_cost
+        
+        # Get current premium status
+        premium_expires = user_manager.get_user_premium_expires(user_id)
+        
+        message_text = "*Подтверждение покупки* ⚠️\n\n"
+        message_text += f"*Количество дней:* {days} 📅\n"
+        message_text += f"*Стоимость:* {total_cost} токенов 💰\n"
+        message_text += f"*Останется:* {remaining} токенов 💳\n\n"
+        
+        if premium_expires and datetime.now() < premium_expires:
+            message_text += f"Подписка будет продлена на +{days} дн. ✅\n\n"
+        else:
+            message_text += f"Вы получите {days} дн. премиум доступа ✅\n\n"
+        
+        message_text += f"Подтвердить покупку?\n\n"
+        message_text += f"Введите *'да'* для подтверждения или *'нет'* для отмены:"
+        
+        await update.message.reply_text(message_text, parse_mode='Markdown')
+        return BUY_PREMIUM_CONFIRM
+        
+    except ValueError:
+        await update.message.reply_text(
+            "Неверный формат. Введите число (количество дней) ❌\n\n"
+            "Попробуйте еще раз:",
+            parse_mode='Markdown'
+        )
+        return BUY_PREMIUM_DAYS
+
+
+async def buy_premium_confirm_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle confirmation for premium purchase"""
+    user_id = update.effective_user.id
+    user_response = update.message.text.lower().strip()
+
+    if user_response not in ['да', 'yes', 'y', '+']:
+        await update.message.reply_text(
+            "Покупка премиум доступа отменена ❌",
+            parse_mode='Markdown'
+        )
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    days = context.user_data.get('premium_days', 1)
+    PREMIUM_PRICE = TOKEN_CONFIG['premium_price_per_day']
+
+    try:
+        # Purchase premium
+        success, message = user_manager.purchase_premium(user_id, days=days)
+
+        if success:
+            premium_expires = user_manager.get_user_premium_expires(user_id)
+            balance = user_manager.get_balance_info(user_id)
+            total_cost = PREMIUM_PRICE * days
+
+            await update.message.reply_text(
+                f"*Премиум доступ активирован!* ✅\n\n"
+                f"Доступ до: {premium_expires.strftime('%Y-%m-%d %H:%M')} 💎\n"
+                f"Куплено дней: {days} 📅\n"
+                f"Потрачено: {total_cost} токенов 💰\n"
+                f"Осталось: {balance['tokens']} токенов 💳\n\n"
+                f"*Теперь вам доступны все премиум модели!* ⭐\n\n"
+                f"Выберите модель: /switch_model",
+                parse_mode='Markdown'
+            )
+            logger.info(f"User {user_id} purchased premium access for {days} days")
+        else:
+            await update.message.reply_text(f"{message} ❌", parse_mode='Markdown')
+
+    except Exception as e:
+        logger.error(f"Error in buy_premium_confirm_handler for user {user_id}: {e}")
+        await update.message.reply_text(MESSAGES['database_error'])
+    
+    finally:
+        context.user_data.clear()
+
+    return ConversationHandler.END
+
+
+async def buy_premium_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancel premium purchase"""
+    await update.message.reply_text("❌ Покупка премиум доступа отменена")
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
 async def check_overdue_tasks_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Background job to check for overdue tasks"""
     try:
@@ -4069,6 +4492,9 @@ async def setup_bot_commands(application):
         BotCommand("help", "Справка по командам"),
         BotCommand("balance", "Проверить баланс токенов"),
         BotCommand("roulette", "🎰 Ежедневная рулетка (1-50 токенов)"),
+        BotCommand("my_model", "🤖 Моя текущая AI модель"),
+        BotCommand("switch_model", "🔄 Переключить AI модель"),
+        BotCommand("buy_premium", "💎 Купить премиум доступ (300 токенов/день)"),
         BotCommand("finance", "Зарегистрировать бизнес и получить финплан"),
         BotCommand("clients", "Найти клиентов"),
         BotCommand("executors", "Найти исполнителей"),
@@ -4405,6 +4831,32 @@ def main() -> None:
             fallbacks=[CommandHandler("cancel", swipe_employees_cancel)],  # Track callback queries per message
         )
         application.add_handler(swipe_employees_handler)
+
+        # Register model management conversation handlers
+        switch_model_handler = ConversationHandler(
+            entry_points=[CommandHandler("switch_model", switch_model_start)],
+            states={
+                SWITCH_MODEL_ID: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, switch_model_id_handler)
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", switch_model_cancel)],
+        )
+        application.add_handler(switch_model_handler)
+
+        buy_premium_handler = ConversationHandler(
+            entry_points=[CommandHandler("buy_premium", buy_premium_start)],
+            states={
+                BUY_PREMIUM_DAYS: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, buy_premium_days_handler)
+                ],
+                BUY_PREMIUM_CONFIRM: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, buy_premium_confirm_handler)
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", buy_premium_cancel)],
+        )
+        application.add_handler(buy_premium_handler)
         # Register start command as conversation handler (for user info collection)
         start_handler = ConversationHandler(
             entry_points=[CommandHandler("start", start_command)],
@@ -4424,6 +4876,7 @@ def main() -> None:
         application.add_handler(CommandHandler("help", help_command))
         application.add_handler(CommandHandler("find_similar", find_similar_command))
         application.add_handler(CommandHandler("export_history", export_history_command))
+        application.add_handler(CommandHandler("my_model", my_model_command))
 
         # Register callback query handler for inline buttons (only invitation buttons)
         application.add_handler(CallbackQueryHandler(
@@ -4455,7 +4908,20 @@ def main() -> None:
 
         # Start the bot
         logger.info("🚀 Bot is starting...")
-        logger.info(f"Using AI model: {Config.AI_MODEL}")
+        logger.info(f"AI Mode: {Config.AI_MODE}")
+        
+        # Log default model for the current mode
+        try:
+            from model_manager import get_default_model_id, get_model_config
+            default_model_id = get_default_model_id(Config.AI_MODE)
+            default_config = get_model_config(default_model_id)
+            if default_config:
+                logger.info(f"Default AI model: {default_config.name} (ID: {default_model_id})")
+            else:
+                logger.info(f"Default AI model: {default_model_id}")
+        except Exception as e:
+            logger.warning(f"Could not determine default model: {e}")
+        
         application.run_polling(allowed_updates=Update.ALL_TYPES)
 
     except KeyboardInterrupt:
