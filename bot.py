@@ -735,7 +735,7 @@ async def finance_generate_plan(update: Update, context: ContextTypes.DEFAULT_TY
             logger.error(f"PDF generation error for user {user_id}: {pdf_error}", exc_info=True)
             # Fallback to text message if PDF generation fails
             await thinking_msg.edit_text(
-                "⚠️ Не удалось создать PDF. Отправляю текстовую версию..."
+                "Не удалось создать PDF. Отправляю текстовую версию... ⚠️"
             )
 
             # Send text version
@@ -807,7 +807,7 @@ async def finance_generate_plan(update: Update, context: ContextTypes.DEFAULT_TY
         except Exception as send_error:
             logger.error(f"Error sending PDF to user {user_id}: {send_error}")
             await thinking_msg.edit_text(
-                "❌ Произошла ошибка при отправке PDF файла. Попробуйте позже."
+                "Произошла ошибка при отправке PDF файла. Попробуйте позже. ❌"
             )
 
         # Log usage
@@ -3025,7 +3025,7 @@ async def abandon_task_process(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def abandon_task_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel abandon task conversation"""
-    await update.message.reply_text("❌ Отказ от задачи отменен")
+    await update.message.reply_text("Отказ от задачи отменен ❌")
     context.user_data.clear()
     return ConversationHandler.END
 # END of abandon copy-paste
@@ -4262,12 +4262,12 @@ async def my_model_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             days = time_left.days
             hours = time_left.seconds // 3600
             expires_str = premium_expires.strftime('%Y-%m-%d %H:%M').replace(':', '\\:')
-            message_text += f"✅ Активен\n"
-            message_text += f"⏰ Истекает: {expires_str}\n"
-            message_text += f"⏳ Осталось: {days} дн. {hours} ч.\n"
+            message_text += f"Активен ✅\n"
+            message_text += f"Истекает: {expires_str} ⏰\n"
+            message_text += f"Осталось: {days} дн. {hours} ч. ⏳\n"
         else:
             premium_price = TOKEN_CONFIG['premium_price_per_day']
-            message_text += f"❌ Нет активной подписки\n"
+            message_text += f"Нет активной подписки ❌\n"
             message_text += f"Купите доступ: /buy\\_premium ({premium_price} токенов/день)\n"
 
         message_text += f"\n_Сменить модель: /switch\\_model_"

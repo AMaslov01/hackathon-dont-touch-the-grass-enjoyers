@@ -11,6 +11,26 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 
+def escape_markdown(text: str) -> str:
+    """
+    Escape special Markdown characters.
+    
+    Args:
+        text: The text to escape
+        
+    Returns:
+        Text with escaped Markdown special characters
+    """
+    if not text:
+        return text
+    
+    special_chars = ['_', '*', '[', ']', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '!']
+    for char in special_chars:
+        text = text.replace(char, '\\' + char)
+    
+    return text
+
+
 class ModelTier(Enum):
     """Уровни доступа к моделям"""
     FREE = "free"
@@ -240,15 +260,17 @@ def validate_model_access(model_id: str, user_premium_expires: Optional[datetime
     config = get_model_config(model_id)
     
     if not config:
-        return False, f"❌ Модель '{model_id}' не найдена."
+        return False, f"Модель '{model_id}' не найдена ❌"
     
     if not can_user_access_model(model_id, user_premium_expires):
         price = TOKEN_CONFIG['premium_price_per_day']
+        # Escape model name for Markdown
+        escaped_name = escape_markdown(config.name)
         return False, (
-            f"❌ У вас нет доступа к модели *{config.name}*\n\n"
+            f"У вас нет доступа к модели *{escaped_name}* ❌\n\n"
             f"Эта модель доступна только с премиум подпиской.\n"
-            f"💰 Цена: {price} токенов/день\n\n"
-            f"Используйте /buy_premium чтобы купить доступ."
+            f"Цена: {price} токенов/день 💰\n\n"
+            f"Используйте /buy\\_premium чтобы купить доступ."
         )
     
     return True, ""
