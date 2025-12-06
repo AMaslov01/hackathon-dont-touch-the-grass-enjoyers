@@ -27,7 +27,7 @@ from ai_client import ai_client
 from user_manager import user_manager
 from constants import MESSAGES
 from constants import COMMANDS_COSTS
-from pdf_generator import pdf_generator, chat_history_pdf
+from pdf_generator_simple import pdf_generator, chat_history_pdf
 
 # Configure logging
 logging.basicConfig(

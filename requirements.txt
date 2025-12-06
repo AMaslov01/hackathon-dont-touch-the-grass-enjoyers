@@ -10,8 +10,11 @@ python-dotenv>=1.0.0
 # Database
 psycopg2-binary>=2.9.9
 
-# PDF generation
-reportlab>=4.0.0
+# PDF generation (simplified with WeasyPrint)
+weasyprint>=60.0
+markdown>=3.5.0
+# Old PDF generator (if needed as fallback):
+# reportlab>=4.0.0
 
 # Local LLM support
 llama-cpp-python>=0.2.0
