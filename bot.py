@@ -3049,7 +3049,7 @@ async def all_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             tasks_text += "*🚫 Отказанные задачи:*\n"
             for task in abandoned:
                 abandoned_by = f"@{task['abandoned_by_username']}" if task.get('abandoned_by_username') else task.get('abandoned_by_name', 'Unknown')
-                abandoned_at = task['abandoned_at'].strftime("%d.%m.%Y %H:%M") if task.get('abandoned_at') else ""
+                abandoned_at = task['abandoned_at'].strftime("%d.%m.%Y %H:%M").replace(':', '\\:') if task.get('abandoned_at') else ""
                 escaped_title = escape_markdown(task['title'])
                 escaped_abandoned_by = escape_markdown(abandoned_by)
                 if abandoned_at:
@@ -3504,12 +3504,13 @@ async def export_history_command(update: Update, context: ContextTypes.DEFAULT_T
                 logger.info(f"Opening PDF file: {pdf_path}")
                 with open(pdf_path, 'rb') as pdf_file:
                     logger.info(f"Sending PDF document to user {user_id}")
+                    date_str = datetime.now().strftime('%d.%m.%Y %H:%M').replace(':', '\\:')
                     await update.message.reply_document(
                         document=pdf_file,
                         filename=f"История_чата_{user_name}.pdf",
                         caption=f"📜 *История общения с ботом*\n\n"
                                f"Экспортировано сообщений: {len(chat_history)}\n"
-                               f"Дата создания: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
+                               f"Дата создания: {date_str}",
                         parse_mode='Markdown'
                     )
                 
@@ -4076,7 +4077,7 @@ async def switch_model_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
         else:
             premium_price = TOKEN_CONFIG['premium_price_per_day']
             message_text += "*Для доступа к премиум моделям:* 💡\n"
-            message_text += f"Купите премиум доступ: /buy_premium ({premium_price} токенов/день)\n\n"
+            message_text += f"Купите премиум доступ: /buy\\_premium ({premium_price} токенов/день)\n\n"
 
         message_text += "*Укажите ID модели для переключения:* 📝"
 
@@ -4100,7 +4101,7 @@ async def switch_model_id_handler(update: Update, context: ContextTypes.DEFAULT_
         if not config:
             await update.message.reply_text(
                 f"Модель '{model_id}' не найдена ❌\n\n"
-                f"Используйте /switch_model чтобы посмотреть доступные модели.",
+                f"Используйте /switch\\_model чтобы посмотреть доступные модели.",
                 parse_mode='Markdown'
             )
             return ConversationHandler.END
@@ -4135,7 +4136,7 @@ async def switch_model_id_handler(update: Update, context: ContextTypes.DEFAULT_
                     f"*Доступ к премиум модели ограничен* ❌\n\n"
                     f"Модель *{config.name}* доступна только с премиум подпиской.\n\n"
                     f"Цена: {price} токенов/день 💰\n\n"
-                    f"Купите премиум доступ: /buy_premium",
+                    f"Купите премиум доступ: /buy\\_premium",
                     parse_mode='Markdown'
                 )
                 return ConversationHandler.END
@@ -4215,15 +4216,16 @@ async def my_model_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             time_left = premium_expires - datetime.now()
             days = time_left.days
             hours = time_left.seconds // 3600
+            expires_str = premium_expires.strftime('%Y-%m-%d %H:%M').replace(':', '\\:')
             message_text += f"✅ Активен\n"
-            message_text += f"⏰ Истекает: {premium_expires.strftime('%Y-%m-%d %H:%M')}\n"
+            message_text += f"⏰ Истекает: {expires_str}\n"
             message_text += f"⏳ Осталось: {days} дн. {hours} ч.\n"
         else:
             premium_price = TOKEN_CONFIG['premium_price_per_day']
             message_text += f"❌ Нет активной подписки\n"
-            message_text += f"Купите доступ: /buy_premium ({premium_price} токенов/день)\n"
+            message_text += f"Купите доступ: /buy\\_premium ({premium_price} токенов/день)\n"
 
-        message_text += f"\n_Сменить модель: /switch_model_"
+        message_text += f"\n_Сменить модель: /switch\\_model_"
 
         await update.message.reply_text(message_text, parse_mode='Markdown')
         logger.info(f"User {user_id} checked their model info")
@@ -4387,15 +4389,18 @@ async def buy_premium_confirm_handler(update: Update, context: ContextTypes.DEFA
             premium_expires = user_manager.get_user_premium_expires(user_id)
             balance = user_manager.get_balance_info(user_id)
             total_cost = PREMIUM_PRICE * days
+            
+            # Format date safely for Markdown (escape colons)
+            expires_str = premium_expires.strftime('%Y-%m-%d %H:%M').replace(':', '\\:')
 
             await update.message.reply_text(
                 f"*Премиум доступ активирован!* ✅\n\n"
-                f"Доступ до: {premium_expires.strftime('%Y-%m-%d %H:%M')} 💎\n"
+                f"Доступ до: {expires_str} 💎\n"
                 f"Куплено дней: {days} 📅\n"
                 f"Потрачено: {total_cost} токенов 💰\n"
                 f"Осталось: {balance['tokens']} токенов 💳\n\n"
                 f"*Теперь вам доступны все премиум модели!* ⭐\n\n"
-                f"Выберите модель: /switch_model",
+                f"Выберите модель: /switch\\_model",
                 parse_mode='Markdown'
             )
             logger.info(f"User {user_id} purchased premium access for {days} days")
