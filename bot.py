@@ -244,19 +244,30 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         welcome_text = MESSAGES['welcome']
         await update.message.reply_text(welcome_text, parse_mode='Markdown')
 
-        # If it's a new user, notify about initial tokens
+        # Get and show balance
         balance = user_manager.get_balance_info(user_id)
-        if balance and balance['tokens'] == balance['max_tokens']:
-            await update.message.reply_text(
-                MESSAGES['account_created'].format(tokens=balance['tokens']),
-                parse_mode='Markdown'
-            )
-            
-            # Suggest filling info for job search
-            await update.message.reply_text(
-                "💡 *Подсказка:* Чтобы работодатели могли найти вас, заполните информацию о себе командой /fill\\_info",
-                parse_mode='Markdown'
-            )
+        
+        if balance:
+            # If it's a new user, notify about initial tokens
+            if balance['tokens'] == balance['max_tokens']:
+                await update.message.reply_text(
+                    MESSAGES['account_created'].format(tokens=balance['tokens']),
+                    parse_mode='Markdown'
+                )
+                
+                # Suggest filling info for job search
+                await update.message.reply_text(
+                    "💡 *Подсказка:* Чтобы работодатели могли найти вас, заполните информацию о себе командой /fill\\_info",
+                    parse_mode='Markdown'
+                )
+            else:
+                # Show balance for existing users
+                balance_text = MESSAGES['balance'].format(
+                    tokens=balance['tokens'],
+                    max_tokens=balance['max_tokens'],
+                    refresh_time=balance['next_refresh']
+                )
+                await update.message.reply_text(balance_text, parse_mode='Markdown')
 
         logger.info(f"User {user_id} successfully initialized")
 
