@@ -90,7 +90,7 @@ MODELS: Dict[str, ModelConfig] = {
         name="Aya-23-8B (Премиум)",
         tier=ModelTier.PREMIUM,
         model_type=ModelType.LOCAL,
-        description="⭐ Aya-23 - мультиязычная модель от Cohere. Поддержка 23 языков с отличным качеством на русском.",
+        description="Aya-23 - мультиязычная модель от Cohere. Поддержка 23 языков с отличным качеством на русском.",
         repo_id="bartowski/aya-23-8B-GGUF",
         filename="aya-23-8B-Q4_K_M.gguf",
         prompt_format="command-r",  # Aya использует формат Command-R от Cohere
@@ -100,13 +100,13 @@ MODELS: Dict[str, ModelConfig] = {
     # =========================================================================
     # БЕСПЛАТНЫЕ OPENROUTER МОДЕЛИ
     # =========================================================================
-    "deepseek-chimera": ModelConfig(
-        id="deepseek-chimera",
-        name="DeepSeek V3",
+    "glm-4.5-air": ModelConfig(
+        id="glm-4.5-air",
+        name="GLM-4.5-Air (Бесплатная)",
         tier=ModelTier.FREE,
         model_type=ModelType.OPENROUTER,
-        description="DeepSeek chimera - мощная модель с контекстом 64K токенов.",
-        openrouter_id="tngtech/deepseek-r1t2-chimera:free"  # БЕСПЛАТНАЯ на OpenRouter!
+        description="Быстрая облачная модель для общих задач. Требует интернет.",
+        openrouter_id="z-ai/glm-4.5-air:free"
     ),
     
     
@@ -119,17 +119,17 @@ MODELS: Dict[str, ModelConfig] = {
         name="meta-llama (Премиум)",
         tier=ModelTier.PREMIUM,
         model_type=ModelType.OPENROUTER,
-        description="⭐ meta-llama/llama - быстрая экспериментальная модель от Google.",
+        description="meta-llama/llama - быстрая экспериментальная модель от Google.",
         openrouter_id="meta-llama/llama-3.3-70b-instruct:free"  # БЕСПЛАТНАЯ на OpenRouter!
     ),
     
-    "glm-4.5-air": ModelConfig(
-        id="glm-4.5-air",
-        name="GLM-4.5-Air (Премиум)",
+    "deepseek-chimera": ModelConfig(
+        id="deepseek-chimera",
+        name="DeepSeek V3 (Премиум)",
         tier=ModelTier.PREMIUM,
         model_type=ModelType.OPENROUTER,
-        description="Быстрая облачная модель для общих задач. Требует интернет.",
-        openrouter_id="z-ai/glm-4.5-air:free"
+        description="DeepSeek chimera - мощная модель с контекстом 64K токенов.",
+        openrouter_id="tngtech/deepseek-r1t2-chimera:free"  # БЕСПЛАТНАЯ на OpenRouter!
     ),
     
     
@@ -139,7 +139,7 @@ MODELS: Dict[str, ModelConfig] = {
 
 # Дефолтные модели для новых пользователей (зависит от режима работы)
 DEFAULT_MODEL_ID_LOCAL = "llama3-finance"  # Для режима local
-DEFAULT_MODEL_ID_OPENROUTER = "deepseek-chimera"  # Для режима openrouter
+DEFAULT_MODEL_ID_OPENROUTER = "glm-4.5-air"  # Для режима openrouter
 
 
 def get_default_model_id(ai_mode: str = "local") -> str:
