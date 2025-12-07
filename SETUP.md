@@ -32,13 +32,13 @@ nano config.env
 
 ```env
 # Telegram Bot Token - Get from @BotFather on Telegram
-TELEGRAM_BOT_TOKEN=8427660436:AAGQHN1vL5E9gZlo6dTnewHF9LLso3ik6v4
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
 
 # AI Mode: 'local' or 'openrouter'
 AI_MODE=local
 
 # OpenRouter API Key - Get from https://openrouter.ai/keys
-OPENROUTER_API_KEY=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
+OPENROUTER_API_KEY=your_openrouter_api_key_here
 
 # OpenRouter API URL
 OPENROUTER_API_URL=https://openrouter.ai/api/v1/chat/completions

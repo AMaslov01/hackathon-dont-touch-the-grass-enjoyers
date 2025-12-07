@@ -1,0 +1,187 @@
+// Database schema for Telegram AI Bot
+// Use on https://dbdiagram.io/
+
+Project telegram_bot {
+  database_type: 'PostgreSQL'
+  Note: '''
+    # Telegram AI Bot Database Schema
+    Complete schema with businesses, employees, tasks, and premium system
+  '''
+}
+
+// ============================================
+// USERS TABLE
+// ============================================
+Table users {
+  user_id bigint [pk, note: 'Telegram user ID (primary key)']
+  username varchar(255)
+  first_name varchar(255)
+  last_name varchar(255)
+  user_info text [note: 'User personal description for AI candidate matching']
+  overall_rating integer [note: 'Overall user rating from last job (null if never employed)']
+  tokens integer [not null, default: 50, note: 'Current available tokens']
+  max_tokens integer [not null, default: 100, note: 'Maximum tokens after refresh']
+  last_token_refresh timestamp [not null, default: `CURRENT_TIMESTAMP`, note: 'Last time tokens were refreshed']
+  last_roulette_spin timestamp [note: 'Last time user spun the roulette']
+  roulette_notified boolean [default: false, note: 'Whether user has been notified about available roulette']
+  workers_info text [note: 'Stored information about workers/employees search requests']
+  executors_info text [note: 'Stored information about executors/freelancers search requests']
+  completed_tasks integer [default: 0, note: 'Total number of tasks completed by user']
+  abandonments_count integer [default: 0, note: 'Total number of tasks abandoned by user']
+  active_business_id integer [note: 'Currently active business for the user']
+  current_model varchar(50) [default: 'llama3-finance', note: 'DEPRECATED: use current_local_model/current_cloud_model']
+  current_local_model varchar(100) [default: 'llama3-finance', note: 'User preferred local model']
+  current_cloud_model varchar(100) [default: 'deepseek-chimera', note: 'User preferred cloud model']
+  premium_expires_at timestamp [note: 'Premium access expiration timestamp (NULL if no premium)']
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+  
+  indexes {
+    active_business_id [name: 'idx_users_active_business']
+    premium_expires_at [name: 'idx_users_premium_expires_at', type: btree, note: 'Filtered: WHERE premium_expires_at IS NOT NULL']
+    current_model [name: 'idx_users_current_model']
+  }
+  
+  Note: 'Stores user information and token balance'
+}
+
+// ============================================
+// BUSINESSES TABLE
+// ============================================
+Table businesses {
+  id serial [pk]
+  owner_id bigint [not null, ref: > users.user_id, note: 'Reference to the user who owns this business']
+  business_name varchar(255) [not null, note: 'Name of the business']
+  business_type text [note: 'Type/description of the business']
+  financial_situation text [note: 'Current financial situation of the business']
+  goals text [note: 'Business goals and objectives']
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+  
+  indexes {
+    owner_id [name: 'idx_businesses_owner_id']
+  }
+  
+  Note: 'Stores business information for users'
+}
+
+// ============================================
+// EMPLOYEES TABLE
+// ============================================
+Table employees {
+  id serial [pk]
+  business_id integer [not null, ref: > businesses.id, note: 'Reference to the business']
+  user_id bigint [not null, ref: > users.user_id, note: 'Reference to the user (employee)']
+  status varchar(20) [not null, default: 'pending', note: 'Invitation status: pending, accepted, or rejected']
+  rating integer [not null, default: 500, note: 'Employee rating in this specific business (500 = default, 0-1000 range)']
+  invited_at timestamp [not null, default: `CURRENT_TIMESTAMP`, note: 'When the invitation was sent']
+  responded_at timestamp [note: 'When the user responded to the invitation']
+  
+  indexes {
+    business_id [name: 'idx_employees_business_id']
+    user_id [name: 'idx_employees_user_id']
+    status [name: 'idx_employees_status']
+    (business_id, user_id) [unique, name: 'employees_business_id_user_id_key']
+  }
+  
+  Note: 'Stores employee invitations and associations with businesses'
+}
+
+// ============================================
+// TASKS TABLE
+// ============================================
+Table tasks {
+  id serial [pk]
+  business_id integer [not null, ref: > businesses.id, note: 'Reference to the business']
+  title varchar(500) [not null, note: 'Task title']
+  description text [note: 'Task description']
+  assigned_to bigint [ref: > users.user_id, note: 'User assigned to this task']
+  created_by bigint [not null, ref: > users.user_id, note: 'User who created the task']
+  status varchar(20) [not null, default: 'available', note: 'Task status: available, assigned, in_progress, submitted, completed, abandoned']
+  ai_recommended_employee bigint [ref: > users.user_id, note: 'AI recommended employee for this task']
+  abandoned_by bigint [ref: > users.user_id, note: 'User who abandoned the task']
+  abandoned_at timestamp [note: 'When the task was abandoned']
+  deadline_minutes integer [note: 'Task deadline in minutes from assignment']
+  difficulty integer [note: 'Task difficulty (1-5), CHECK (difficulty >= 1 AND difficulty <= 5)']
+  priority varchar(20) [note: 'Task priority: низкий, средний, высокий']
+  submitted_at timestamp [note: 'When the task was submitted for review']
+  quality_coefficient numeric(3,2) [note: 'Quality rating from owner (0.5-1.0), CHECK (quality_coefficient >= 0.5 AND quality_coefficient <= 1.0)']
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+  assigned_at timestamp [note: 'When the task was assigned']
+  completed_at timestamp [note: 'When the task was completed']
+  
+  indexes {
+    business_id [name: 'idx_tasks_business_id']
+    assigned_to [name: 'idx_tasks_assigned_to']
+    status [name: 'idx_tasks_status']
+  }
+  
+  Note: 'Stores tasks for businesses'
+}
+
+// ============================================
+// USAGE HISTORY TABLE
+// ============================================
+Table usage_history {
+  id serial [pk]
+  user_id bigint [not null, ref: > users.user_id]
+  prompt text [not null]
+  response text [not null]
+  tokens_used integer [not null, note: 'Number of tokens deducted for this request']
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+  
+  indexes {
+    user_id [name: 'idx_usage_history_user_id']
+    created_at [name: 'idx_usage_history_created_at']
+  }
+  
+  Note: 'Logs all AI requests and responses'
+}
+
+// ============================================
+// PREMIUM PURCHASES TABLE
+// ============================================
+Table premium_purchases {
+  id serial [pk]
+  user_id bigint [not null, ref: > users.user_id, note: 'User who purchased premium']
+  model_id varchar(50) [not null, note: 'Model ID or premium_access for general premium']
+  tokens_spent integer [not null, note: 'Amount of tokens spent']
+  days_purchased integer [not null, note: 'Number of days purchased']
+  expires_at timestamp [not null, note: 'When this premium access expires']
+  purchased_at timestamp [not null, default: `CURRENT_TIMESTAMP`, note: 'When the purchase was made']
+  
+  indexes {
+    user_id [name: 'idx_premium_purchases_user_id']
+    expires_at [name: 'idx_premium_purchases_expires_at']
+  }
+  
+  Note: 'Tracks premium access purchases'
+}
+
+// ============================================
+// RELATIONSHIPS (for better visualization)
+// ============================================
+
+// User -> Business (active business)
+Ref: users.active_business_id > businesses.id
+
+// Business -> User (owner)
+// Already defined inline: businesses.owner_id > users.user_id
+
+// Employee relationships
+// Already defined inline: employees.business_id > businesses.id
+// Already defined inline: employees.user_id > users.user_id
+
+// Task relationships
+// Already defined inline: tasks.business_id > businesses.id
+// Already defined inline: tasks.assigned_to > users.user_id
+// Already defined inline: tasks.created_by > users.user_id
+// Already defined inline: tasks.ai_recommended_employee > users.user_id
+// Already defined inline: tasks.abandoned_by > users.user_id
+
+// Usage history relationships
+// Already defined inline: usage_history.user_id > users.user_id
+
+// Premium purchases relationships
+// Already defined inline: premium_purchases.user_id > users.user_id
+
