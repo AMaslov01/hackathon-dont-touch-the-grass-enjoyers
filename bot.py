@@ -1210,7 +1210,7 @@ async def delete_business_start(update: Update, context: ContextTypes.DEFAULT_TY
             return ConversationHandler.END
 
         # Show list of businesses
-        businesses_text = "🗑 *Удаление бизнеса*\n\n"
+        businesses_text = "*Удаление бизнеса*\n\n"
         businesses_text += "⚠️ *ВНИМАНИЕ:* Удаление бизнеса приведет к удалению:\n"
         businesses_text += "• Всех сотрудников\n"
         businesses_text += "• Всех задач\n"
@@ -4001,25 +4001,25 @@ async def show_next_candidate(update: Update, context: ContextTypes.DEFAULT_TYPE
     reasoning = candidate.get('reasoning', 'AI рекомендует этого кандидата')
 
     # Format rating
-    rating_text = f"⭐ Рейтинг: {rating}" if rating is not None else "⭐ Рейтинг: нет опыта"
+    rating_text = f"Рейтинг: {rating}" if rating is not None else "⭐ Рейтинг: нет опыта"
 
     # Fix emoji at start for AI-generated reasoning (breaks Telegram Markdown parser)
     reasoning = fix_emoji_at_start(reasoning)
 
-    # Escape markdown in user input
+    # Escape markdown in user input (NOT AI-generated content!)
     escaped_username = escape_markdown(f"@{username}")
     escaped_first_name = escape_markdown(first_name)
     escaped_user_info = escape_markdown(user_info)
-    escaped_reasoning = escape_markdown(reasoning)
+    # Note: reasoning is AI-generated, don't escape it
 
     # Create message
     message_text = (
-        f"👤 *Кандидат {current_index + 1} из {len(candidates)}*\n\n"
+        f"*Кандидат {current_index + 1} из {len(candidates)}* 👤\n\n"
         f"*Пользователь:* {escaped_username}\n"
         f"*Имя:* {escaped_first_name}\n"
         f"{rating_text}\n\n"
         f"*Описание:*\n{escaped_user_info}\n\n"
-        f"🤖 *Почему подходит:*\n{escaped_reasoning}\n\n"
+        f"*Почему подходит:*\n{reasoning}\n\n"
         f"Пригласить этого кандидата?"
     )
 
@@ -4179,22 +4179,22 @@ async def swipe_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         reasoning = next_candidate.get('reasoning', 'AI рекомендует этого кандидата')
 
         # Format rating
-        rating_text = f"⭐ Рейтинг: {rating}" if rating is not None else "⭐ Рейтинг: нет опыта"
+        rating_text = f"Рейтинг: {rating}" if rating is not None else "⭐ Рейтинг: нет опыта"
 
-        # Escape markdown in user input
+        # Escape markdown in user input (NOT AI-generated content!)
         escaped_username = escape_markdown(f"@{username}")
         escaped_first_name = escape_markdown(first_name)
         escaped_user_info = escape_markdown(user_info)
-        escaped_reasoning = escape_markdown(reasoning)
+        # Note: reasoning is AI-generated, don't escape it
 
         # Create message
         message_text = (
-            f"👤 *Кандидат {current_idx + 1} из {len(candidates)}*\n\n"
+            f"*Кандидат {current_idx + 1} из {len(candidates)}*\n\n"
             f"*Пользователь:* {escaped_username}\n"
             f"*Имя:* {escaped_first_name}\n"
             f"{rating_text}\n\n"
             f"*Описание:*\n{escaped_user_info}\n\n"
-            f"🤖 *Почему подходит:*\n{escaped_reasoning}\n\n"
+            f"*Почему подходит:*\n{reasoning}\n\n"
             f"Пригласить этого кандидата?"
         )
 
@@ -4222,7 +4222,7 @@ async def swipe_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
     except Exception as e:
         logger.error(f"Error in swipe_callback_handler for user {user_id}: {e}", exc_info=True)
-        await query.answer("❌ Ошибка")
+        await query.answer("Ошибка ❌")
         try:
             await context.bot.send_message(
                 chat_id=user_id,
