@@ -248,26 +248,21 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         balance = user_manager.get_balance_info(user_id)
         
         if balance:
-            # If it's a new user, notify about initial tokens
+            # Show balance for all users
+            balance_text = (
+                f"*Ваш баланс:*\n\n"
+                f"Токенов: {balance['tokens']} / {balance['max_tokens']}\n"
+                f"Обновление через: {balance['next_refresh']}\n\n"
+                f"_Токены выдаются автоматически каждые 24 часа!_"
+            )
+            await update.message.reply_text(balance_text, parse_mode='Markdown')
+            
+            # Suggest filling info for job search (only for new users)
             if balance['tokens'] == balance['max_tokens']:
-                await update.message.reply_text(
-                    MESSAGES['account_created'].format(tokens=balance['tokens']),
-                    parse_mode='Markdown'
-                )
-                
-                # Suggest filling info for job search
                 await update.message.reply_text(
                     "💡 *Подсказка:* Чтобы работодатели могли найти вас, заполните информацию о себе командой /fill\\_info",
                     parse_mode='Markdown'
                 )
-            else:
-                # Show balance for existing users
-                balance_text = MESSAGES['balance'].format(
-                    tokens=balance['tokens'],
-                    max_tokens=balance['max_tokens'],
-                    refresh_time=balance['next_refresh']
-                )
-                await update.message.reply_text(balance_text, parse_mode='Markdown')
 
         logger.info(f"User {user_id} successfully initialized")
 
@@ -355,10 +350,6 @@ async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     """Handle the /balance command"""
     user_id = update.effective_user.id
 
-    # Check if user has filled their info
-    if not await check_user_info_filled(update, context):
-        return
-
     try:
         # Check and refresh tokens if needed
         user_manager.check_and_refresh_tokens(user_id)
@@ -387,10 +378,6 @@ async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def roulette_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the /roulette command"""
     user_id = update.effective_user.id
-
-    # Check if user has filled their info
-    if not await check_user_info_filled(update, context):
-        return
 
     try:
         # Ensure user exists in database
@@ -457,30 +444,6 @@ async def check_and_notify_roulette(update: Update, user_id: int):
         logger.error(f"Error checking roulette notification for user {user_id}: {e}")
 
 
-async def check_user_info_filled(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """
-    Check if user has filled their info. If not, prompt them to do so.
-    Returns True if user info is filled, False otherwise.
-    """
-    user_id = update.effective_user.id
-    
-    # Skip check for /start command (it handles user_info collection)
-    if update.message and update.message.text and update.message.text.startswith('/start'):
-        return True
-    
-    # Check if user has filled their info
-    if not user_manager.has_user_info(user_id):
-        await update.message.reply_text(
-            "*Доступ ограничен* ⚠️\n\n"
-            "Для использования бота необходимо заполнить информацию о себе.\n\n"
-            "Пожалуйста, используйте команду /start для начала работы.",
-            parse_mode='Markdown'
-        )
-        return False
-    
-    return True
-
-
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle regular text messages"""
     user_id = update.effective_user.id
@@ -489,10 +452,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Check if it's a text message
     if not user_message:
         await update.message.reply_text(MESSAGES['invalid_message'], parse_mode='Markdown')
-        return
-
-    # Check if user has filled their info
-    if not await check_user_info_filled(update, context):
         return
 
     logger.info(f"User {user_id} sent message: {user_message[:50]}...")
@@ -579,10 +538,6 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 async def finance_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start the finance conversation - updates active business or prompts to create one"""
     user_id = update.effective_user.id
-
-    # Check if user has filled their info
-    if not await check_user_info_filled(update, context):
-        return ConversationHandler.END
 
     try:
         # Ensure user exists in database
@@ -980,10 +935,6 @@ async def finance_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def create_business_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start the create business conversation"""
     user_id = update.effective_user.id
-
-    # Check if user has filled their info
-    if not await check_user_info_filled(update, context):
-        return ConversationHandler.END
 
     try:
         # Ensure user exists in database
@@ -3713,10 +3664,6 @@ async def find_similar_command(update: Update, context: ContextTypes.DEFAULT_TYP
     user_id = update.effective_user.id
     user = update.effective_user
 
-    # Check if user has filled their info
-    if not await check_user_info_filled(update, context):
-        return
-
     try:
         # Ensure user exists in database
         user_manager.get_or_create_user(
@@ -4299,10 +4246,6 @@ async def switch_model_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
     """Start the switch model conversation"""
     user_id = update.effective_user.id
 
-    # Check if user has filled their info
-    if not await check_user_info_filled(update, context):
-        return ConversationHandler.END
-
     try:
         # Ensure user exists in database
         user_manager.get_or_create_user(
@@ -4464,10 +4407,6 @@ async def my_model_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     """Handle the /my_model command to show current model and premium status"""
     user_id = update.effective_user.id
 
-    # Check if user has filled their info
-    if not await check_user_info_filled(update, context):
-        return
-
     try:
         # Ensure user exists
         user_manager.get_or_create_user(
@@ -4527,10 +4466,6 @@ async def my_model_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def buy_premium_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handle the /buy_premium command to purchase premium access"""
     user_id = update.effective_user.id
-
-    # Check if user has filled their info
-    if not await check_user_info_filled(update, context):
-        return ConversationHandler.END
 
     try:
         # Ensure user exists
