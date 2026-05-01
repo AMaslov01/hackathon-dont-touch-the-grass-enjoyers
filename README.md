@@ -1,98 +1,95 @@
-# 🚀 AI Business Manager Bot - Альфа Хак
+# 🚀 AI Business Manager Bot — Alfa Hack
 
-> Telegram бот с AI для комплексного управления бизнесом
+> A Telegram bot with AI for comprehensive business management
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![PostgreSQL](https://img.shields.io/badge/postgresql-12+-blue.svg)](https://www.postgresql.org/)
 
-**Telegram бот:** [@hackathonchik_bot](https://t.me/hackathonchik_bot)
+**Telegram bot:** [@hackathonchik_bot](https://t.me/hackathonchik_bot)
 
-## 📋 Оглавление
+## 📋 Table of Contents
 
-- [Быстрая установка](#-быстрая-установка)
-- [О проекте](#-о-проекте)
-- [Ключевые возможности](#-ключевые-возможности)
-- [Архитектура](#архитектура)
-- [Интеграция с Альфа-Банком](#-интеграция-с-альфа-банком)
-- [База данных](#-база-данных)
-- [Масштабируемость](#-масштабируемость)
+- [Quick Setup](#-quick-setup)
+- [About the Project](#-about-the-project)
+- [Key Features](#-key-features)
+- [Architecture](#architecture)
+- [Alfa-Bank Integration](#-alfa-bank-integration)
+- [Database](#-database)
+- [Scalability](#-scalability)
 
-## ⚡ Быстрая установка
+## ⚡ Quick Setup
 
-> **Подробная инструкция:** См. [SETUP.md](SETUP.md) для пошаговой установки за 5 минут
+> **Detailed instructions:** See [SETUP.md](SETUP.md) for step-by-step setup in 5 minutes.
 
+## 🎯 About the Project
 
+**@hackathonchik_bot** is an intelligent Telegram bot for managing small and medium-sized businesses with AI integration.
 
-## 🎯 О проекте
+### Problem
+- 📊 Lack of accessible financial planning tools
+- 👥 Difficulty finding clients and contractors
+- 🔄 Inefficient team management
+- 💰 High cost of business consultants
 
-**@hackathonchik_bot** - интеллектуальный Telegram-бот для управления малым и средним бизнесом с интеграцией AI.
+### Solution
+An AI platform in Telegram for:
+- ✅ Automatic financial plan generation
+- ✅ Intelligent search for clients and partners
+- ✅ Employee and task management
+- ✅ 24/7 business consultations
 
-### Проблема
-- 📊 Отсутствие доступных инструментов финпланирования
-- 👥 Сложность поиска клиентов и исполнителей
-- 🔄 Неэффективное управление командой
-- 💰 Высокая стоимость бизнес-консультантов
+## ✨ Key Features
 
-### Решение
-AI-платформа в Telegram для:
-- ✅ Автоматического создания финансовых планов
-- ✅ Интеллектуального поиска клиентов и партнёров
-- ✅ Управления сотрудниками и задачами
-- ✅ Получения бизнес-консультаций 24/7
+### 🤖 AI Assistant
+- Smart chatbot for business questions
+- Contextual help based on the user's business type and personal information
+- AI recommendations for tasks
+- **Model:** Locally hosted Llama-3-8B-Instruct-Finance-RAG-GGUF, with the option to switch to OpenRouter Llama 3.3 70B Instruct; in both modes, purchasing premium unlocks access to a higher-quality model
 
-## ✨ Ключевые возможности
+### 📊 Financial Planning
+- Financial plan based on 4 key questions
+- AI analysis and strategy creation
+- Professional PDF report
+- Industry-specific personalization
 
-### 🤖 AI Ассистент
-- Умный чат-бот для бизнес-вопросов
-- Контекстная помощь по специфике бизнеса и персональной информации пользователя
-- AI рекомендации по задачам
-- **Модель:** Локально Llama-3-8B-Instruct-Finance-RAG-GGUF,  с возможностью переключится на openrouter Llama 3.3 70B Instruct, также в обоих режимах при покупке премиума можно переключиться на более хорошую модель
+### 👥 Team Management
+- Hire employees via Telegram username and dismiss them
+- Invitation system with confirmation step
+- Multi-business support — work under several owners
+- Create multiple businesses
+- Contractor rating with intelligent matching
 
-### 📊 Финансовое планирование
-- Финансовый план на основе 4 ключевых вопроса
-- AI-анализ и создание стратегии
-- Профессиональный PDF-отчёт
-- Персонализация под отрасль
+### 📋 Task Management
+- **AI-assisted executor selection** based on task completion history and time spent
+- Statuses: available → in_progress → completed
+- Task deadlines and priorities
+- Ability to assign work to an employee
+- Employees can pick up tasks independently and can decline them
+- Owner confirms completion with the option to provide feedback
+- Task outcome affects the employee's rating
 
-### 👥 Управление командой
-- Возможность нанимать сотрудников через Telegram username и увольнять их
-- Система приглашений с подтверждением
-- Мультибизнес - работа у нескольких владельцев
-- Создание нескольких бизнесов
-- Рейтинг исполнителей с умным подбором
+### 💰 Token System
 
-### 📋 Управление задачами
-- **AI-подбор исполнителя** на основе истории выполнения задач и затраченного времени
-- Статусы: available → in_progress → completed
-- Дедлайны по задачам и приоритеты
-- Можно назначить работу сотруднику
-- Сотрудники могут брать задачи самостоятельно и могут от них отказываться
-- Подтверждение выполнения владельцем с возможностью дать обратную связь
-- Результат выполнения задачи влияет на рейтинг сотрудника
-
-
-### 💰 Система токенов
-
-Внутренняя валюта для управления использованием AI:
+Internal currency for managing AI usage:
 
 ```
-Регистрация → 50 токенов
+Registration → 50 tokens
      ↓
-AI запрос → 1-3 токена
+AI request → 1–3 tokens
      ↓
-24 часа → Добавка 10  токенов и возможность прокрутить рулетку с максимальным призом в 50 токенов
+Every 24 hours → 10 tokens added + ability to spin the wheel (max prize: 50 tokens)
 ```
 
-**Зачем нужна:**
-- 🛡️ Защита от злоупотреблений AI
-- ⚖️ Справедливое распределение ресурсов
-- 💰 Возможность монетизации
-- 📊 Контроль расходов на AI
+**Why it exists:**
+- 🛡️ Protection against AI abuse
+- ⚖️ Fair distribution of resources
+- 💰 Monetization opportunity
+- 📊 AI cost control
 
-## 🏗️ Архитектура
+## 🏗️ Architecture
 
-### Общая схема
+### Overview
 
 ```
 ┌──────────────┐
@@ -108,15 +105,15 @@ AI запрос → 1-3 токена
    ┌───▼──────────────────────────┐
    │  Business Logic Layer        │
    │                              │
-   │  • ai_client.py          ────┼──► AI запросы через OpenRouter
-   │  • user_manager.py       ────┼──► Токен-система, авторизация действий
-   │  • pdf_generator_simple.py───┼──► Генерация PDF документов
-   │  • constants.py          ────┼──► Конфигурация, тексты
+   │  • ai_client.py          ────┼──► AI requests via OpenRouter
+   │  • user_manager.py       ────┼──► Token system, action authorization
+   │  • pdf_generator_simple.py───┼──► PDF document generation
+   │  • constants.py          ────┼──► Configuration, text strings
    │  • config.py             ────┼──► Environment variables
    └───┬──────────────────────────┘
        │
    ┌───▼──────────────────────────┐
-   │   database.py                │──► DAO паттерн, CRUD операции
+   │   database.py                │──► DAO pattern, CRUD operations
    │   (Data Layer)               │
    └───┬──────────────────────────┘
        │
@@ -126,87 +123,82 @@ AI запрос → 1-3 токена
    └──────────────┘
 ```
 
-### Принцип разделения на слои
+### Layer Separation Principle
 
-**1. Telegram Flow Layer** - изолированная обработка Telegram API (легко заменить на веб/мобильное приложение)
+**1. Telegram Flow Layer** — isolated handling of the Telegram API (easily replaceable with a web or mobile app)
 
-**2. Business Logic Layer** - независимые модули без привязки к Telegram (могут использоваться где угодно)
+**2. Business Logic Layer** — independent modules with no Telegram coupling (usable anywhere)
 
-**3. Data Access Layer** - DAO паттерн (легко мигрировать на другую СУБД или добавить кэширование)
+**3. Data Access Layer** — DAO pattern (easy to migrate to a different DBMS or add caching)
 
-**Преимущества:**  
-✅ Быстрая интеграция - можно взять отдельные модули  
-✅ Независимое тестирование слоев  
-✅ Легкая замена Telegram на веб/мобильное приложение  
-✅ Модули можно развернуть как микросервисы
+**Advantages:**  
+✅ Fast integration — individual modules can be extracted  
+✅ Independent layer testing  
+✅ Easy replacement of Telegram with a web or mobile app  
+✅ Modules can be deployed as microservices
 
-
-
-### Технологии
+### Technologies
 
 **Backend:** Python 3.10+, python-telegram-bot 21.x, psycopg2  
-**Базовая локальная AI:** Llama-3-8B-Instruct-Finance-RAG-GGUF
-
-**Базовая openrouter AI:** z-ai/glm-4.5-air:free  
+**Base local AI:** Llama-3-8B-Instruct-Finance-RAG-GGUF  
+**Base OpenRouter AI:** z-ai/glm-4.5-air:free  
 **Database:** PostgreSQL 12+  
 **Documents:** ReportLab, Pillow
 
+## 🏦 Alfa-Bank Integration
 
-## 🏦 Интеграция с Альфа-Банком
+### Enhancing AI Through Banking Data
 
-### Улучшение AI через банковские данные
+With Alfa-Bank integration, the project will gain **greater autonomy** and **more accurate AI recommendations**.
 
-С интеграцией в Альфа-Банк **повысится автономность проекта** и **точность AI-рекомендаций**. 
+Access to transactions, turnover, and business financial history will allow AI to:
+- 📊 Accurately forecast cash flow and seasonality
+- 💡 Optimize expenses based on real spending patterns
+- 🎯 Recommend suitable credit products
+- 🤖 Operate autonomously without querying the user
 
-Доступ к транзакциям, оборотам и финансовой истории бизнеса позволит AI:
-- 📊 Точно прогнозировать cash flow и сезонность
-- 💡 Оптимизировать расходы на основе реальных паттернов
-- 🎯 Подбирать подходящие кредитные продукты
-- 🤖 Работать автономно без запросов к пользователю
+**Result:** More precise assistance and a seamless user experience.
 
-**Результат:** Помощь станет точнее, а UX - бесшовным.
+### Monetization
 
+- **Freemium** — basic features for free
+- **Premium** — advanced AI capabilities (990 ₽/month)
+- **Cross-sell** — banking products through the bot
+- **Commission** — 0.5–1% of turnover for large businesses
 
-### Монетизация
+## 🗄️ Database
 
-- **Freemium** - базовые функции бесплатно
-- **Premium** - расширенные AI возможности (990₽/мес)
-- **Cross-sell** - банковские продукты через бота
-- **Комиссия** - 0.5-1% с оборота для крупного бизнеса
+PostgreSQL 12+ with 5 tables and a clear relationship schema:
 
-## 🗄️ База данных
+### DB Schema
 
-PostgreSQL 12+ с 5 таблицами и четкой схемой связей:
+![Database](DB.png)
 
-### Схема БД
+## 📈 Scalability
 
-![База данных](DB.png)
-
-## 📈 Масштабируемость
-
-### Текущая архитектура (MVP)
+### Current Architecture (MVP)
 
 ```
 ┌──────────────────────┐
-│    Один сервер       │
+│    Single Server     │
 │  Bot + PostgreSQL    │
 │  Capacity: ~1K users │
 └──────────────────────┘
 ```
 
-### Масштабирование до 10K+ пользователей
+### Scaling to 10K+ Users
 
 ```
 Load Balancer
     ↓
 Bot 1 | Bot 2 | Bot 3  (Horizontal scaling)
     ↓
-Redis Cache  (Кэширование)
+Redis Cache  (Caching)
     ↓
 PostgreSQL Cluster  (Master-Slave)
 ```
 
-### Масштабирование до 100K+ пользователей
+### Scaling to 100K+ Users
 
 ```
 API Gateway (Rate limiting)
@@ -214,84 +206,83 @@ API Gateway (Rate limiting)
 Kubernetes Pods (Auto-scaling)
     ↓
 Microservices:
-├─ AI Service (отдельный сервис)
-├─ DB Cluster (Шардинг)
-├─ Redis Cluster (Кэш + очереди)
+├─ AI Service (dedicated service)
+├─ DB Cluster (Sharding)
+├─ Redis Cluster (Cache + queues)
 └─ Message Queue (RabbitMQ/Kafka)
 ```
 
+## 📋 Bot Commands
 
-## 📋 Команды бота
+### Core Commands
 
-### Основные команды
+| Command | Description |
+|---------|-------------|
+| `/start` | Launch the bot and create an account |
+| `/help` | Full list of commands |
+| `/cancel` | ❌ Cancel the current command |
+| `/fill_info` | 📝 Fill in personal information (for job search) |
+| `/balance` | Check token balance |
+| `/roulette` | 🎰 Daily wheel spin (1–50 tokens) |
+| `/export_history` | Export chat history to PDF |
 
-| Команда | Описание |
-|---------|----------|
-| `/start` | Запустить бота и создать аккаунт |
-| `/help` | Полный список команд |
-| `/cancel` | ❌ Отменить текущую команду |
-| `/fill_info` | 📝 Заполнить информацию о себе (для поиска работы) |
-| `/balance` | Проверить баланс токенов |
-| `/roulette` | 🎰 Ежедневная рулетка (1-50 токенов) |
-| `/export_history` | Экспорт истории чата в PDF |
+### AI Models
 
-### AI Модели
+| Command | Description |
+|---------|-------------|
+| `/my_model` | 🤖 Current AI model |
+| `/switch_model` | 🔄 Switch model |
+| `/buy_premium` | 💎 Purchase access to premium models (15 tokens/day) |
 
-| Команда | Описание |
-|---------|----------|
-| `/my_model` | 🤖 Текущая модель AI |
-| `/switch_model` | 🔄 Переключить модель |
-| `/buy_premium` | 💎 Купить доступ к премиум моделям (15 токенов/день) |
+### Business Management
 
-### Управление бизнесом
+| Command | Description |
+|---------|-------------|
+| `/create_business` | Register a new business |
+| `/my_businesses` | My businesses |
+| `/delete_business` | Delete an existing business |
+| `/switch_businesses` | Switch active business |
+| `/finance` | Get a financial plan for the active business (💰 3 tokens) |
+| `/clients` | AI search for potential clients (💰 2 tokens) |
+| `/executors` | AI search for contractors and service providers (💰 2 tokens) |
+| `/find_similar` | AI search for partners among users (💰 4 tokens) |
 
-| Команда | Описание |
-|---------|----------|
-| `/create_business` | Зарегистрировать новый бизнес |
-| `/my_businesses` | Мои бизнесы |
-| `/delete_business` | Удалить существующий бизнес |
-| `/switch_businesses` | Сменить активный бизнес |
-| `/finance` | Получить финплан по актуальному бизнесу (💰 3 токена) |
-| `/clients` | AI поиск потенциальных клиентов (💰 2 токена) |
-| `/executors` | AI поиск исполнителей и подрядчиков (💰 2 токена) |
-| `/find_similar` | AI поиск партнёров среди пользователей (💰 4 токена) |
+### Team Management
 
-### Управление командой
+| Command | Description |
+|---------|-------------|
+| `/find_employees` | 🔍 Find employees (AI matching by business or requirements, 💰 4 tokens) |
+| `/add_employee` | Invite an employee |
+| `/fire_employee` | Dismiss an employee |
+| `/employees` | Employee list |
+| `/invitations` | My invitations |
+| `/accept` | Accept an invitation |
+| `/reject` | Decline an invitation |
+| `/my_employers` | My employers |
 
-| Команда | Описание |
-|---------|----------|
-| `/find_employees` | 🔍 Найти сотрудников (AI подбор по бизнесу или требованиям, 💰 4 токена) |
-| `/add_employee` | Пригласить сотрудника |
-| `/fire_employee` | Уволить сотрудника |
-| `/employees` | Список сотрудников |
-| `/invitations` | Мои приглашения |
-| `/accept` | Принять приглашение |
-| `/reject` | Отклонить приглашение |
-| `/my_employers` | Мои работодатели |
+### Task Management
 
-### Управление задачами
+| Command | Description |
+|---------|-------------|
+| `/create_task` | Create a task (with AI recommendation) |
+| `/available_tasks` | Available tasks |
+| `/my_tasks` | My assigned tasks |
+| `/all_tasks` | All business tasks (owner only) |
+| `/take_task` | Take a task into work |
+| `/assign_task` | Assign a task to an employee |
+| `/complete_task` | Submit a task for review |
+| `/abandon_task` | Abandon a task (−20 to rating) |
+| `/submitted_tasks` | Tasks pending review (owner only) |
+| `/review_task` | Review and accept/reject a task (owner only) |
 
-| Команда | Описание |
-|---------|----------|
-| `/create_task` | Создать задачу (с AI-рекомендацией) |
-| `/available_tasks` | Свободные задачи |
-| `/my_tasks` | Мои назначенные задачи |
-| `/all_tasks` | Все задачи бизнеса (владелец) |
-| `/take_task` | Взять задачу в работу |
-| `/assign_task` | Назначить задачу сотруднику |
-| `/complete_task` | Сдать задачу на проверку |
-| `/abandon_task` | Отказаться от задачи (-20 к рейтингу) |
-| `/submitted_tasks` | Задачи на проверке (владелец) |
-| `/review_task` | Проверить и принять/отклонить задачу (владелец) |
+## Additional Notes
 
-## Дополнительно
-Реализована возможность общения в режиме переписки с AI-ассистентом за токены
+A conversational mode for chatting with the AI assistant is also available for tokens.
 
-## 🤝 Команда
+## 🤝 Team
 
 **"Hackaton Advanced"**
 
-
 **Made with ❤️ for Alfa Hackathon**
 
-*Попробуйте бота: [@hackathonchik_bot](https://t.me/hackathonchik_bot)*
+*Try the bot: [@hackathonchik_bot](https://t.me/hackathonchik_bot)*
